@@ -64,10 +64,18 @@ function loginView() {
   $app.append(h('div', { class: 'login' },
     h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form)));
 }
+function emailPref(enabled, save) {
+  const box = h('input', { type: 'checkbox', checked: enabled, onchange: act(async () => { await save(box.checked); toast(box.checked ? 'Email notifications on.' : 'Email notifications off.'); }) });
+  return box;
+}
 function accountView() {
   const cur = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
   const np = h('input', { type: 'password', required: true, minlength: 10, autocomplete: 'new-password' });
-  $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: route }, '← Back')),
+  const prefs = state.me.role === 'client' ? h('div', { class: 'card' }, h('h2', {}, 'Email notifications'),
+    h('label', { class: 'check' }, emailPref(state.me.notify, async v => { await api('POST', '/api/notifications', { enabled: v }); state.me.notify = v; }),
+      ' Email me when my accountant sends a message or publishes a report or document'),
+    h('p', { class: 'muted' }, 'Emails only say that something new is waiting; they never include its contents. You can still see everything after signing in.')) : null;
+  $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: route }, '← Back')), prefs,
     h('div', { class: 'card' }, h('h1', {}, 'Change password'), h('form', { class: 'stack', onsubmit: act(async e => {
       e.preventDefault(); await api('POST', '/api/password', { current: cur.value, password: np.value }); toast('Password changed.'); route();
     }) }, h('label', {}, 'Current password', cur), h('label', {}, 'New password (10+ characters)', np), h('div', {}, h('button', { class: 'btn' }, 'Update password')))));
@@ -162,7 +170,7 @@ async function staffView(view = {}) {
   if (view.clientId) return staffClient(view.clientId, view.tab || 'Reports', re);
   if (view.page === 'staff') return staffAccounts(re);
   const clients = await api('GET', '/api/clients');
-  const rows = clients.map(c => h('tr', {}, h('td', {}, h('strong', {}, c.name), h('div', { class: 'muted' }, c.email || '')),
+  const rows = clients.map(c => h('tr', {}, h('td', {}, h('strong', {}, c.name), c.notify ? null : [' ', h('span', { class: 'pill late' }, 'Email off')], h('div', { class: 'muted' }, c.email || '')),
     h('td', {}, c.docs + ' docs'),
     h('td', {}, c.open_requests ? h('span', { class: 'pill open' }, c.open_requests + ' open') : h('span', { class: 'pill done' }, 'none')),
     h('td', {}, c.last_message ? (c.last_message.startsWith('client') ? 'Client' : 'You') + c.last_message.slice(c.last_message.indexOf(':')) : '—'),
@@ -221,9 +229,12 @@ async function staffClient(clientId, tab, re) {
       h('div', { class: 'card' }, h('h2', {}, 'All requests'), requestsTable(reqs, { onChange: here, staff: true })));
   } else if (tab === 'Account') {
     const np = h('input', { required: true, minlength: 10, autocomplete: 'off', placeholder: '10+ characters' });
-    body = h('div', { class: 'card' }, h('h2', {}, 'Reset client password'), h('form', { class: 'stack', onsubmit: act(async e => {
+    body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Email notifications to this client'),
+      h('label', { class: 'check' }, emailPref(!!c.notify, v => api('POST', `/api/clients/${clientId}/notifications`, { enabled: v })), ' Send this client emails about new messages and reports'),
+      h('p', { class: 'muted' }, 'Clients can change this themselves under Account. You are still emailed about their uploads and messages either way.')),
+      h('div', { class: 'card' }, h('h2', {}, 'Reset client password'), h('form', { class: 'stack', onsubmit: act(async e => {
       e.preventDefault(); await api('POST', `/api/clients/${clientId}/password`, { password: np.value }); np.value = ''; toast('Password reset. Client has been signed out.');
-    }) }, h('label', {}, 'New temporary password', np), h('div', {}, h('button', { class: 'btn' }, 'Reset password'))));
+    }) }, h('label', {}, 'New temporary password', np), h('div', {}, h('button', { class: 'btn' }, 'Reset password')))));
   } else {
     body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), messagesPanel(data, 'staff', () => here('Messages')));
   }

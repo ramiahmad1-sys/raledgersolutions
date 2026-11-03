@@ -31,6 +31,10 @@ CREATE INDEX IF NOT EXISTS idx_req_client ON requests(client_id);
 CREATE INDEX IF NOT EXISTS idx_msg_client ON messages(client_id);
 `);
 
+// migration: per-client email opt-out (1 = send notification emails to this client)
+if (!db.prepare('PRAGMA table_info(clients)').all().some(c => c.name === 'notify'))
+  db.exec('ALTER TABLE clients ADD COLUMN notify INTEGER NOT NULL DEFAULT 1');
+
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16);
   return salt.toString('hex') + ':' + crypto.scryptSync(pw, salt, 64).toString('hex');

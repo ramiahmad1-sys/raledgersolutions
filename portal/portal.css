@@ -45,3 +45,4 @@ th{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.0
 #toast.show{opacity:1}
 @media(max-width:600px){.msg{max-width:95%}.card{overflow-x:auto}}
 .fit{flex:0 0 auto!important}
+.check{display:flex;gap:8px;align-items:center;font-weight:400}.check input{width:auto}

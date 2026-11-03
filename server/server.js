@@ -140,7 +140,7 @@ async function api(req, res, url) {
   /* clients (staff) */
   if (p === '/api/clients' && m === 'GET') {
     needStaff(user);
-    return out(db.prepare(`SELECT c.*, u.email,
+    return out(db.prepare(`SELECT c.id,c.name,c.contact,c.created,c.notify, u.email,
       (SELECT COUNT(*) FROM files f WHERE f.client_id=c.id AND f.by='client') AS docs,
       (SELECT COUNT(*) FROM requests r WHERE r.client_id=c.id AND r.status='open') AS open_requests,
       (SELECT sender||': '||substr(text,1,40) FROM messages x WHERE x.client_id=c.id ORDER BY date DESC LIMIT 1) AS last_message
@@ -155,7 +155,7 @@ async function api(req, res, url) {
     if (db.prepare('SELECT 1 FROM users WHERE email=?').get(email)) throw new HttpError(409, 'That email is already in use.');
     const id = crypto.randomUUID();
     db.exec('BEGIN');
-    try { db.prepare('INSERT INTO clients VALUES (?,?,?,?)').run(id, name, contact, now()); createUser({ email, password: pw, role: 'client', clientId: id }); db.exec('COMMIT'); }
+    try { db.prepare('INSERT INTO clients (id,name,contact,created) VALUES (?,?,?,?)').run(id, name, contact, now()); createUser({ email, password: pw, role: 'client', clientId: id }); db.exec('COMMIT'); }
     catch (e) { db.exec('ROLLBACK'); throw e; }
     return out({ id }, 201);
   }
@@ -173,6 +173,20 @@ async function api(req, res, url) {
     const r = db.prepare("UPDATE users SET pw=? WHERE client_id=? AND role='client'").run(hashPassword(pw), mm[1]);
     db.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE client_id=?)").run(mm[1]);
     return out({ ok: r.changes > 0 });
+  }
+
+  /* email notification preference: a client sets their own; staff can set any client's */
+  if (p === '/api/notifications' && m === 'POST') {
+    if (user.role !== 'client') throw new HttpError(403, 'Forbidden');
+    const en = (await readJson(req)).enabled; if (typeof en !== 'boolean') throw bad();
+    db.prepare('UPDATE clients SET notify=? WHERE id=?').run(en ? 1 : 0, user.client_id);
+    return out({ enabled: en });
+  }
+  if ((mm = p.match(/^\/api\/clients\/([\w-]+)\/notifications$/)) && m === 'POST') {
+    needStaff(user); scopeClient(user, mm[1]);
+    const en = (await readJson(req)).enabled; if (typeof en !== 'boolean') throw bad();
+    db.prepare('UPDATE clients SET notify=? WHERE id=?').run(en ? 1 : 0, mm[1]);
+    return out({ enabled: en });
   }
 
   /* staff accounts (staff only) */
@@ -211,7 +225,7 @@ async function api(req, res, url) {
   if (p === '/api/data' && m === 'GET') {
     const cid = scopeClient(user, url.searchParams.get('clientId'));
     return out({
-      client: db.prepare('SELECT id,name,contact FROM clients WHERE id=?').get(cid),
+      client: db.prepare('SELECT id,name,contact,notify FROM clients WHERE id=?').get(cid),
       files: db.prepare('SELECT id,kind,name,size,period,note,by,date FROM files WHERE client_id=? ORDER BY date DESC, rowid DESC').all(cid),
       requests: db.prepare('SELECT * FROM requests WHERE client_id=?').all(cid),
       messages: db.prepare('SELECT id,sender,text,date FROM messages WHERE client_id=? ORDER BY date').all(cid)
@@ -277,8 +291,10 @@ async function api(req, res, url) {
   }
   throw new HttpError(404, 'Not found');
 }
-const me = u => ({ role: u.role, email: u.email, clientId: u.client_id || null,
-  name: u.client_id ? db.prepare('SELECT name FROM clients WHERE id=?').get(u.client_id)?.name : null });
+const me = u => {
+  const c = u.client_id ? db.prepare('SELECT name,notify FROM clients WHERE id=?').get(u.client_id) : null;
+  return { role: u.role, email: u.email, clientId: u.client_id || null, name: c?.name ?? null, notify: c ? !!c.notify : null };
+};
 
 /* ---------- static site ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',

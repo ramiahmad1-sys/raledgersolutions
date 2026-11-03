@@ -25,6 +25,8 @@ Open http://localhost:3000. On first start the staff account is created from tho
 Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
 - Client uploads a document or sends a message -> email to staff.
 - Staff publishes a report/document or replies -> email to that client.
+- Clients can opt out under **Account** (staff can also change it on the client's Account tab; the client list shows "Email off").
+  Opting out only stops emails *to that client*; staff are still emailed about that client's uploads and messages.
 - Bursts are batched: 10 uploads in a minute is one email ("10 new documents"). Window: `NOTIFY_DELAY_MS` (default 90000).
 - Emails never contain file names or message text, only who, what kind, how many, and a sign-in link.
 - Mail failures are logged and never block uploads or messages. Pending (unsent) notifications are lost if the server restarts.

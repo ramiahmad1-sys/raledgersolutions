@@ -81,3 +81,31 @@ test('a mail failure never breaks the request', async () => {
   const r = await call('POST', '/api/messages', { cookie: staff, json: { clientId: id, text: 'hi' } });
   assert.equal(r.status, 201); await wait(500); process.env.SMTP_PORT = saved;
 });
+
+test('per-client email opt-out', async () => {
+  const staff = await login('staff@ra.test', 'staff-password-1');
+  const id = (await call('POST', '/api/clients', { cookie: staff, json: { name: 'Delta', email: 'd@delta.test', password: 'delta-password-1' } })).data.id;
+  const cl = await login('d@delta.test', 'delta-password-1');
+  assert.equal((await call('GET', '/api/me', { cookie: cl })).data.notify, true);          // default on
+
+  assert.equal((await call('POST', '/api/notifications', { cookie: cl, json: { enabled: 'no' } })).status, 400);
+  assert.equal((await call('POST', '/api/notifications', { cookie: staff, json: { enabled: false } })).status, 403);   // staff use the per-client route
+  assert.equal((await call('POST', '/api/notifications', { cookie: cl, json: { enabled: false } })).status, 200);
+  assert.equal((await call('GET', '/api/me', { cookie: cl })).data.notify, false);
+  assert.equal((await call('GET', '/api/clients', { cookie: staff })).data.find(c => c.id === id).notify, 0);
+
+  inbox.length = 0;
+  await call('POST', '/api/messages', { cookie: staff, json: { clientId: id, text: 'hello' } });          // would email the client
+  await call('POST', '/api/messages', { cookie: cl, json: { clientId: id, text: 'reply' } });             // still emails staff
+  await wait(600);
+  assert.equal(inbox.length, 1);
+  assert.equal(inbox[0].rcpt.join(), 'staff@ra.test');
+
+  // staff can turn it back on for the client; a client cannot touch another client's setting
+  assert.equal((await call('POST', `/api/clients/${id}/notifications`, { cookie: cl, json: { enabled: true } })).status, 403);
+  assert.equal((await call('POST', `/api/clients/${id}/notifications`, { cookie: staff, json: { enabled: true } })).status, 200);
+  inbox.length = 0;
+  await call('POST', '/api/messages', { cookie: staff, json: { clientId: id, text: 'again' } });
+  await wait(600);
+  assert.equal(inbox.length, 1); assert.equal(inbox[0].rcpt.join(), 'd@delta.test');
+});

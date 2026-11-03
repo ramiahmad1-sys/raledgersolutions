@@ -89,6 +89,8 @@ function recipients(audience, clientId) {
     const env = (process.env.NOTIFY_STAFF_EMAIL || '').split(',').map(s => s.trim()).filter(Boolean);
     return env.length ? env : db.prepare("SELECT email FROM users WHERE role='staff'").all().map(r => r.email);
   }
+  // clients can opt out of emails sent to them (staff are still told about client activity)
+  if (!db.prepare('SELECT notify FROM clients WHERE id=?').get(clientId)?.notify) return [];
   return db.prepare("SELECT email FROM users WHERE role='client' AND client_id=?").all(clientId).map(r => r.email);
 }
 async function flush({ audience, clientId, kind, n }) {
