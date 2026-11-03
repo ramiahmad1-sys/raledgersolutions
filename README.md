@@ -60,13 +60,18 @@ Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
 | `SMTP_USER`, `SMTP_PASS` | Login (Gmail/Google Workspace: use an app password) |
 | `MAIL_FROM` | e.g. `RA Ledger Solutions <no-reply@raledgersolutions.com>` |
 | `NOTIFY_STAFF_EMAIL` | Comma-separated staff recipients (default: every staff user's login email) |
-| `PORTAL_URL` | Public site URL for the link in emails, e.g. `https://raledgersolutions.com` |
+| `PORTAL_URL` | Public portal URL for the link in emails, e.g. `https://portal.raledgersolutions.com` |
 
 The server refuses to send credentials or mail without TLS.
 
 ## Deploying (Google Cloud free server)
 
-Runs at $0/month on Google Cloud's always-free `e2-micro` VM, which keeps data on a 30 GB disk.
+**Current setup:** the portal runs at `https://portal.raledgersolutions.com` on a Google Cloud always-free `e2-micro` VM
+(30 GB disk). The marketing website at `raledgersolutions.com` / `www` is hosted on **Netlify**, separately. The HTML
+pages in this repo are an older copy of the site; the server redirects everything except `/portal/`, `/api/` and
+`/healthz` to the portal.
+
+To rebuild the server from scratch:
 
 1. Create the VM in **Compute Engine > VM instances**:
    - Region **us-east1**, **us-central1** or **us-west1** (only these are free).
@@ -76,10 +81,13 @@ Runs at $0/month on Google Cloud's always-free `e2-micro` VM, which keeps data o
 2. **VPC network > IP addresses**: promote the VM's external IP to **static** so it never changes.
 3. Click **SSH** on the VM and run (with your domain and staff email):
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/ramiahmad1-sys/raledgersolutions/main/deploy/gcp-setup.sh | sudo bash -s -- raledgersolutions.com you@example.com
+   curl -fsSL https://raw.githubusercontent.com/ramiahmad1-sys/raledgersolutions/main/deploy/gcp-setup.sh | sudo bash -s -- portal.raledgersolutions.com you@example.com
    ```
    It prints the server IP and a one-time staff password.
-4. In GoDaddy DNS: `A @` to the server IP and `CNAME www` to `raledgersolutions.com`. HTTPS is issued automatically.
+4. In GoDaddy DNS add one record: type **A**, name **`portal`**, value = the server IP. Don't touch the `@`/`www`
+   records (those point to Netlify). HTTPS is issued automatically once the record resolves.
+5. Turn on email notifications: put the `SMTP_*` and `MAIL_FROM` settings in `/etc/raledger.env`
+   (Gmail: an app password), then `sudo systemctl restart raledger`.
 
 Afterwards: `sudo raledger-update` deploys the latest `main`; email settings live in `/etc/raledger.env`.
 Daily backups go to `/var/lib/raledger/backups` (14 days, same disk).
@@ -93,12 +101,10 @@ Daily backups go to `/var/lib/raledger/backups` (14 days, same disk).
 3. When prompted, fill in `STAFF_EMAIL` and `STAFF_PASSWORD` (10+ chars); leave the SMTP ones blank to start with email off.
 4. Open the `https://raledgersolutions.onrender.com` URL Render gives you, sign in at `/portal/`, then
    **delete `STAFF_PASSWORD`** from the service's Environment tab (it's only used on first start).
-5. Custom domain: service **Settings > Custom Domains**, add `raledgersolutions.com` and `www.raledgersolutions.com`.
-   In GoDaddy **DNS**, change only the `@` A record and the `www` CNAME to the values Render shows.
-   Leave MX/TXT records alone. Render issues the HTTPS certificate automatically.
+5. Custom domain: service **Settings > Custom Domains**, add `portal.raledgersolutions.com`.
+   In GoDaddy **DNS**, add only the `portal` record Render shows. Leave the website's `@`/`www` records and MX/TXT alone.
 
 Pushing to `main` redeploys. Render snapshots the disk daily; also download a copy periodically.
-The server serves the whole site, so once DNS points to Render the old host is no longer used.
 
 Other hosts: any Node 22.13+ host with a persistent disk and HTTPS works; set the same variables.
 Apache/PHP-only shared hosting (the `.htaccess` here) cannot run it.

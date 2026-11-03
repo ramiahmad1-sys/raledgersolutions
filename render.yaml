@@ -25,7 +25,7 @@ services:
       - key: TRUST_PROXY
         value: "1"
       - key: PORTAL_URL
-        value: https://raledgersolutions.com
+        value: https://portal.raledgersolutions.com
       # Entered in the Render dashboard (never committed). Remove STAFF_PASSWORD after first login.
       - key: STAFF_EMAIL
         sync: false
