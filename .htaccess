@@ -1,0 +1,5 @@
+# Serve /services as services.html (canonical URLs have no extension)
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^([^.]+)$ $1.html [L]
