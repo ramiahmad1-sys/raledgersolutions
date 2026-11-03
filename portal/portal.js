@@ -2,6 +2,8 @@
 'use strict';
 
 const $app = document.getElementById('app');
+/* replace the page content, skipping empty (null/false) sections */
+const render = (...kids) => $app.replaceChildren(...kids.flat().filter(k => k != null && k !== false));
 const today = () => new Date().toISOString().slice(0, 10);
 const fmtDate = d => d ? new Date(d.length === 10 ? d + 'T00:00:00' : d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -48,7 +50,7 @@ function renderUserbar() {
 async function route() {
   if (!state.me) { try { state.me = await api('GET', '/api/me'); } catch { state.me = null; } }
   renderUserbar();
-  $app.replaceChildren();
+  render();
   if (!state.me) return loginView();
   return state.me.role === 'staff' ? staffView() : clientView();
 }
@@ -75,7 +77,7 @@ function accountView() {
     h('label', { class: 'check' }, emailPref(state.me.notify, async v => { await api('POST', '/api/notifications', { enabled: v }); state.me.notify = v; }),
       ' Email me when my accountant sends a message or publishes a report or document'),
     h('p', { class: 'muted' }, 'Emails only say that something new is waiting; they never include its contents. You can still see everything after signing in.')) : null;
-  $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: route }, '← Back')), prefs,
+  render(h('p', {}, h('button', { class: 'btn sm sec', onclick: route }, '← Back')), prefs,
     h('div', { class: 'card' }, h('h1', {}, 'Change password'), h('form', { class: 'stack', onsubmit: act(async e => {
       e.preventDefault(); await api('POST', '/api/password', { current: cur.value, password: np.value }); toast('Password changed.'); route();
     }) }, h('label', {}, 'Current password', cur), h('label', {}, 'New password (10+ characters)', np), h('div', {}, h('button', { class: 'btn' }, 'Update password')))));
@@ -145,7 +147,9 @@ async function clientView(tab = 'Overview') {
   const again = t => clientView(t || tab);
   let body;
   if (tab === 'Overview') {
+    const due = (await api('GET', '/api/invoices')).filter(i => i.status === 'sent').reduce((s, i) => s + i.balance_cents, 0);
     body = h('div', {}, h('div', { class: 'grid' },
+      due > 0 ? h('div', { class: 'card' }, h('div', { class: 'stat' }, money(due)), 'balance due on invoices') : null,
       h('div', { class: 'card' }, h('div', { class: 'stat' }, open.length), 'open requests from your accountant'),
       h('div', { class: 'card' }, h('div', { class: 'stat' }, reports.length), 'reports available'),
       h('div', { class: 'card' }, h('div', { class: 'stat' }, docs.length), 'documents you’ve sent')),
@@ -158,10 +162,12 @@ async function clientView(tab = 'Overview') {
       h('div', { class: 'card' }, h('h2', {}, 'Your uploads'), filesTable(docs, { canDelete: true, onChange: again })));
   } else if (tab === 'Requests') {
     body = h('div', { class: 'card' }, h('h2', {}, 'Requests'), requestsTable(reqs, { onChange: again }));
+  } else if (tab === 'Invoices') {
+    body = await clientInvoices(() => again('Invoices'));
   } else {
     body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), messagesPanel(data, 'client', () => again('Messages')));
   }
-  $app.replaceChildren(h('h1', {}, 'Welcome, ' + client.name), tabs(['Overview', 'Reports', 'Documents', 'Requests', 'Messages'], tab, again), body);
+  render(h('h1', {}, 'Welcome, ' + client.name), tabs(['Overview', 'Reports', 'Documents', 'Requests', 'Invoices', 'Messages'], tab, again), body);
 }
 
 /* ---------- staff view ---------- */
@@ -169,6 +175,7 @@ async function staffView(view = {}) {
   const re = v => staffView(v ?? view);
   if (view.clientId) return staffClient(view.clientId, view.tab || 'Reports', re);
   if (view.page === 'staff') return staffAccounts(re);
+  if (view.page === 'billing') return staffBilling(re);
   const clients = await api('GET', '/api/clients');
   const rows = clients.map(c => h('tr', {}, h('td', {}, h('strong', {}, c.name), c.notify ? null : [' ', h('span', { class: 'pill late' }, 'Email off')], h('div', { class: 'muted' }, c.email || '')),
     h('td', {}, c.docs + ' docs'),
@@ -183,13 +190,14 @@ async function staffView(view = {}) {
     toast('Client added. Send them the login details securely and ask them to change the password.'); re({});
   }) }, h('div', { class: 'row' }, h('label', {}, 'Company name', name), h('label', {}, 'Contact', contact)),
     h('div', { class: 'row' }, h('label', {}, 'Client login email', email), h('label', {}, 'Temporary password', pw)), h('div', {}, h('button', { class: 'btn' }, 'Add client')));
-  $app.replaceChildren(sectionNav('clients', re), h('h1', {}, 'Clients'),
+  render(sectionNav('clients', re), h('h1', {}, 'Clients'),
     h('div', { class: 'card' }, clients.length ? h('table', {}, h('thead', {}, h('tr', {}, ['Client', 'Uploads', 'Requests', 'Last message', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)) : h('p', { class: 'empty' }, 'No clients yet. Add your first one below.')),
     h('div', { class: 'card' }, h('h2', {}, 'Add a client'), addForm));
 }
 
 function sectionNav(active, re) {
-  return tabs(['Clients', 'Staff accounts'], active === 'staff' ? 'Staff accounts' : 'Clients', n => re(n === 'Clients' ? {} : { page: 'staff' }));
+  const names = { clients: 'Clients', billing: 'Billing', staff: 'Staff accounts' };
+  return tabs(Object.values(names), names[active], n => re(n === 'Clients' ? {} : { page: n === 'Billing' ? 'billing' : 'staff' }));
 }
 async function staffAccounts(re) {
   const list = await api('GET', '/api/staff');
@@ -202,7 +210,7 @@ async function staffAccounts(re) {
         h('button', { class: 'btn sm danger', onclick: act(async () => { if (!confirm('Remove ' + u.email + '? They will be signed out immediately.')) return; await api('DELETE', '/api/staff/' + u.id); toast('Removed.'); here(); }) }, 'Remove')]));
   });
   const email = h('input', { type: 'email', required: true }), pw = h('input', { required: true, minlength: 10, autocomplete: 'off', placeholder: 'Temporary, 10+ characters' });
-  $app.replaceChildren(sectionNav('staff', re), h('h1', {}, 'Staff accounts'),
+  render(sectionNav('staff', re), h('h1', {}, 'Staff accounts'),
     h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Email', 'Added', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)),
       h('p', { class: 'muted' }, 'Staff can see every client\u2019s data and manage all accounts. Only add people you trust. If email notifications are on, each staff login also receives them.')),
     h('div', { class: 'card' }, h('h2', {}, 'Add a staff member'), h('form', { class: 'stack', onsubmit: act(async e => {
@@ -227,6 +235,8 @@ async function staffClient(clientId, tab, re) {
       e.preventDefault(); await api('POST', '/api/requests', { clientId, title: title.value, due: due.value }); here();
     }) }, h('div', { class: 'row' }, h('label', {}, 'What do you need?', title), h('label', {}, 'Due', due)), h('div', {}, h('button', { class: 'btn' }, 'Send request')))),
       h('div', { class: 'card' }, h('h2', {}, 'All requests'), requestsTable(reqs, { onChange: here, staff: true })));
+  } else if (tab === 'Billing') {
+    body = await staffClientBilling(c, here);
   } else if (tab === 'Account') {
     const np = h('input', { required: true, minlength: 10, autocomplete: 'off', placeholder: '10+ characters' });
     body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Email notifications to this client'),
@@ -242,9 +252,9 @@ async function staffClient(clientId, tab, re) {
     if (!confirm('Delete ' + c.name + ' and ALL their files, requests and messages? This cannot be undone.')) return;
     await api('DELETE', '/api/clients/' + clientId); re({});
   }) }, 'Delete client');
-  $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: () => re({}) }, '← All clients')),
+  render(h('p', {}, h('button', { class: 'btn sm sec', onclick: () => re({}) }, '← All clients')),
     h('div', { class: 'row' }, h('h1', {}, c.name), h('div', { class: 'fit' }, danger)),
-    tabs(['Reports', 'Client uploads', 'Requests', 'Messages', 'Account'], tab, here), body);
+    tabs(['Reports', 'Client uploads', 'Requests', 'Messages', 'Billing', 'Account'], tab, here), body);
 }
 
-route().catch(e => { $app.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Portal unavailable'), h('p', {}, e.message))); });
+route().catch(e => { render(h('div', { class: 'card' }, h('h2', {}, 'Portal unavailable'), h('p', {}, e.message))); });

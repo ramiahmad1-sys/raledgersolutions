@@ -20,6 +20,18 @@ Open http://localhost:3000. On first start the staff account is created from tho
 | `NODE_ENV=production` | | Marks the session cookie `Secure` (needs HTTPS) |
 | `TRUST_PROXY=1` | | Use `X-Forwarded-For` for login throttling when behind a reverse proxy |
 
+## Billing
+
+Staff: **Billing** (top tab) and each client's **Billing** tab.
+- Invoices start as drafts; **Send to client** assigns the next number (INV-0001, ...), locks the invoice and emails the client.
+- Sent invoices can't be edited or deleted, only voided (and only before any payment is recorded). Numbers are never reused.
+- Record payments (check, ACH, card, cash, Zelle) including partial payments; remove one only to correct a mistake.
+- Optional "pay online" link per invoice (e.g. a QuickBooks or Stripe payment link); clients see a **Pay online** button.
+- Monthly fees: set per client, then **Create drafts** for a month on the Billing page (one per client per month).
+- Clients see their invoices, balance due, and a printable / PDF version (`/portal/invoice.html`).
+- A client with invoice history can't be deleted, so records are kept.
+- No sales tax lines: add one as a line item if a service is taxable.
+
 ## Email notifications
 
 Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:

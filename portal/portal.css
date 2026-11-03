@@ -46,3 +46,12 @@ th{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.0
 @media(max-width:600px){.msg{max-width:95%}.card{overflow-x:auto}}
 .fit{flex:0 0 auto!important}
 .check{display:flex;gap:8px;align-items:center;font-weight:400}.check input{width:auto}
+.num{text-align:right;white-space:nowrap}
+.pill.grey{background:#eef1f4;color:#5b6b7a}
+.stat.warn{color:#a12a2a}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.notes{white-space:pre-wrap;background:var(--bg-soft);padding:10px 12px;border-radius:6px}
+tfoot td{border-bottom:none}
+table.lines td{padding:6px 4px}
+table.lines input.qty{width:90px}table.lines input.rate{width:120px}
+ul{margin:0 0 14px;padding-left:20px}
