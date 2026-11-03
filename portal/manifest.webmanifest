@@ -1,0 +1,17 @@
+{
+  "name": "RA Ledger Solutions Client Portal",
+  "short_name": "RA Ledger",
+  "description": "Secure client portal: documents, reports, invoices and messages.",
+  "start_url": "/portal/",
+  "scope": "/portal/",
+  "id": "/portal/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12314f",
+  "theme_color": "#12314f",
+  "icons": [
+    { "src": "/portal/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/portal/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/portal/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

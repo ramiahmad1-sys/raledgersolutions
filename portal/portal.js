@@ -28,7 +28,8 @@ async function api(method, path, body, raw) {
   const opts = { method, credentials: 'same-origin', headers: { 'X-Requested-With': 'ra-portal' } };
   if (raw) { opts.body = raw; if (raw.type) opts.headers['Content-Type'] = raw.type; }
   else if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
-  const r = await fetch(path, opts);
+  let r;
+  try { r = await fetch(path, opts); } catch { throw Object.assign(new Error(navigator.onLine === false ? 'You are offline. Check your connection and try again.' : 'Could not reach the server. Please try again.'), { network: true }); }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && path !== '/api/login' && path !== '/api/me') { state.me = null; route(); throw new Error('Please sign in again.'); }
   if (!r.ok) throw new Error(data.error || 'Request failed (' + r.status + ')');
@@ -41,14 +42,34 @@ const state = { me: null };
 
 function renderUserbar() {
   const bar = document.getElementById('userbar'); bar.replaceChildren();
+  if (installEvent && !isStandalone()) bar.append(h('button', { class: 'linkbtn', onclick: act(async () => { installEvent.prompt(); await installEvent.userChoice; installEvent = null; renderUserbar(); }) }, 'Install app'));
   if (!state.me) return;
   bar.append(h('span', {}, state.me.role === 'staff' ? 'Staff · ' + state.me.email : state.me.name),
     h('button', { class: 'linkbtn', onclick: () => accountView() }, 'Account'),
     h('button', { class: 'linkbtn', onclick: act(async () => { await api('POST', '/api/logout'); state.me = null; route(); }) }, 'Sign out'));
 }
 
+/* ---------- install as an app ---------- */
+let installEvent = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; renderUserbar(); });
+window.addEventListener('appinstalled', () => { installEvent = null; renderUserbar(); toast('App installed.'); });
+function installHint() {
+  if (isStandalone()) return null;
+  if (installEvent) return h('p', { class: 'muted' }, h('button', { class: 'btn sm sec', onclick: act(async () => { installEvent.prompt(); await installEvent.userChoice; installEvent = null; renderUserbar(); }) }, 'Install the app'), ' Add it to your home screen for one-tap access.');
+  if (isIOS()) return h('p', { class: 'notice' }, 'Install on iPhone or iPad: open this page in Safari, tap the Share button, then \u201cAdd to Home Screen\u201d.');
+  return null;
+}
+
 async function route() {
-  if (!state.me) { try { state.me = await api('GET', '/api/me'); } catch { state.me = null; } }
+  if (!state.me) {
+    try { state.me = await api('GET', '/api/me'); }
+    catch (e) {
+      state.me = null;
+      if (e.network) { renderUserbar(); return render(h('div', { class: 'card login' }, h('h1', {}, 'Can\u2019t connect'), h('p', {}, e.message), h('button', { class: 'btn', onclick: () => route() }, 'Try again'))); }
+    }
+  }
   renderUserbar();
   render();
   if (!state.me) return loginView();
@@ -64,7 +85,8 @@ function loginView() {
     state.me = await api('POST', '/api/login', { email: email.value, password: pw.value }); route();
   }) }, h('label', {}, 'Email', email), h('label', {}, 'Password', pw), h('button', { class: 'btn' }, 'Sign in'));
   $app.append(h('div', { class: 'login' },
-    h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form)));
+    h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form),
+    installHint()));
 }
 function emailPref(enabled, save) {
   const box = h('input', { type: 'checkbox', checked: enabled, onchange: act(async () => { await save(box.checked); toast(box.checked ? 'Email notifications on.' : 'Email notifications off.'); }) });
@@ -258,3 +280,5 @@ async function staffClient(clientId, tab, re) {
 }
 
 route().catch(e => { render(h('div', { class: 'card' }, h('h2', {}, 'Portal unavailable'), h('p', {}, e.message))); });
+
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/portal/sw.js', { scope: '/portal/' }).catch(() => {}));
