@@ -32,6 +32,16 @@ Staff: **Billing** (top tab) and each client's **Billing** tab.
 - A client with invoice history can't be deleted, so records are kept.
 - No sales tax lines: add one as a line item if a service is taxable.
 
+## Phone app (installable web app)
+
+The portal installs to a phone's home screen and opens full screen like an app (no app store).
+- iPhone/iPad: open the portal in Safari, tap Share, then **Add to Home Screen**.
+- Android: Chrome shows **Install app** (also a button in the portal header).
+
+`portal/sw.js` caches only the app's own static files and shows `offline.html` without a connection.
+It never caches `/api/` responses, documents or invoices, so no client data is stored on the device by the app.
+Files: `portal/manifest.webmanifest`, `portal/icons/`.
+
 ## Email notifications
 
 Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:

@@ -302,7 +302,7 @@ const me = u => {
 
 /* ---------- static site ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml', '.webp': 'image/webp', '.woff2': 'font/woff2' };
+  '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
 const BLOCKED = new Set(['server', 'data', 'node_modules', 'package.json', 'package-lock.json']);
 function serveStatic(req, res, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
@@ -314,6 +314,7 @@ function serveStatic(req, res, url) {
   file = tryFiles.find(f => fs.existsSync(f) && fs.statSync(f).isFile());
   if (!file || !file.startsWith(ROOT + path.sep) || !MIME[path.extname(file)]) throw new HttpError(404, 'Not found');
   const h = { 'Content-Type': MIME[path.extname(file)], 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=300' };
+  if (parts[0] === 'portal' && parts[1] === 'sw.js') h['Service-Worker-Allowed'] = '/portal/';
   if (parts[0] === 'portal') Object.assign(h, { 'Cache-Control': 'no-cache', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin',
     'Content-Security-Policy': "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'" });
   res.writeHead(200, h); req.method === 'HEAD' ? res.end() : fs.createReadStream(file).pipe(res);
