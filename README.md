@@ -20,6 +20,26 @@ Open http://localhost:3000. On first start the staff account is created from tho
 | `NODE_ENV=production` | | Marks the session cookie `Secure` (needs HTTPS) |
 | `TRUST_PROXY=1` | | Use `X-Forwarded-For` for login throttling when behind a reverse proxy |
 
+## Email notifications
+
+Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
+- Client uploads a document or sends a message -> email to staff.
+- Staff publishes a report/document or replies -> email to that client.
+- Bursts are batched: 10 uploads in a minute is one email ("10 new documents"). Window: `NOTIFY_DELAY_MS` (default 90000).
+- Emails never contain file names or message text, only who, what kind, how many, and a sign-in link.
+- Mail failures are logged and never block uploads or messages. Pending (unsent) notifications are lost if the server restarts.
+
+| Variable | Purpose |
+|---|---|
+| `SMTP_HOST`, `SMTP_PORT` | Mail server (port 587 uses STARTTLS; default 587) |
+| `SMTP_SECURE=1` | Implicit TLS (port 465) instead of STARTTLS |
+| `SMTP_USER`, `SMTP_PASS` | Login (Gmail/Google Workspace: use an app password) |
+| `MAIL_FROM` | e.g. `RA Ledger Solutions <no-reply@raledgersolutions.com>` |
+| `NOTIFY_STAFF_EMAIL` | Comma-separated staff recipients (default: every staff user's login email) |
+| `PORTAL_URL` | Public site URL for the link in emails, e.g. `https://raledgersolutions.com` |
+
+The server refuses to send credentials or mail without TLS.
+
 ## Deploying
 
 The Node server needs a host that can run Node (a small VPS, Render, Fly.io, Railway, etc. with a

@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/server.js",
     "create-user": "node --disable-warning=ExperimentalWarning server/create-user.js",
-    "test": "node --disable-warning=ExperimentalWarning --test server/api.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test server/*.test.js"
   }
 }

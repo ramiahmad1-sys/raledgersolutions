@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { db, DATA_DIR, checkPassword, hashPassword, createUser } = require('./db');
+const { notify, enabled: mailEnabled } = require('./mail');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 3000);
@@ -199,6 +200,7 @@ async function api(req, res, url) {
     fs.writeFileSync(path.join(DATA_DIR, 'files', id), buf);
     db.prepare('INSERT INTO files (id,client_id,kind,name,type,size,period,note,by,date) VALUES (?,?,?,?,?,?,?,?,?,?)')
       .run(id, cid, kind, safeName(q.get('name')), type, buf.length, period, note, user.role, now());
+    notify(user.role, cid, kind);
     return out({ id }, 201);
   }
   if ((mm = p.match(/^\/api\/files\/([\w-]+)$/))) {
@@ -238,6 +240,7 @@ async function api(req, res, url) {
   if (p === '/api/messages' && m === 'POST') {
     const b = await readJson(req), cid = scopeClient(user, b.clientId);
     db.prepare('INSERT INTO messages (id,client_id,sender,text,date) VALUES (?,?,?,?,?)').run(crypto.randomUUID(), cid, user.role, str(b.text, 4000), now());
+    notify(user.role, cid, 'message');
     return out({ ok: true }, 201);
   }
   throw new HttpError(404, 'Not found');
@@ -274,5 +277,5 @@ const server = http.createServer(async (req, res) => {
     console.error(e); send(res, 500, { error: 'Server error' });
   }
 });
-if (require.main === module) server.listen(PORT, () => console.log(`RA Ledger Solutions on http://localhost:${PORT}`));
+if (require.main === module) server.listen(PORT, () => console.log(`RA Ledger Solutions on http://localhost:${PORT} (email notifications ${mailEnabled() ? 'on' : 'off'})`));
 module.exports = server;
