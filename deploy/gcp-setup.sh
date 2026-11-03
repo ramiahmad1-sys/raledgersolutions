@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # One-shot setup for a Debian 12 server (e.g. Google Cloud always-free e2-micro).
-# Installs Node 22 + Caddy (automatic HTTPS), runs the site/portal as a locked-down systemd service,
+# Installs Node 22 + Caddy (automatic HTTPS), runs the client portal as a locked-down systemd service,
 # adds swap, daily backups and automatic security updates. Safe to re-run.
 #
-# Usage (on the server):  curl -fsSL <raw url of this file> | sudo bash -s -- <domain> <staff-email>
+# The server hosts the portal only, on its own address (e.g. portal.raledgersolutions.com).
+# The marketing website is hosted separately (Netlify). Visits to anything other than the portal redirect to it.
+#
+# Usage (on the server):  curl -fsSL <raw url of this file> | sudo bash -s -- <portal-domain> <staff-email>
+#   e.g.  ... | sudo bash -s -- portal.raledgersolutions.com you@example.com
 set -euo pipefail
 
 DOMAIN="${1:-}"; STAFF_EMAIL="${2:-}"
-if [[ -z "$DOMAIN" || -z "$STAFF_EMAIL" ]]; then echo "Usage: gcp-setup.sh <domain> <staff-email>"; exit 1; fi
+if [[ -z "$DOMAIN" || -z "$STAFF_EMAIL" ]]; then echo "Usage: gcp-setup.sh <portal-domain> <staff-email>   (e.g. portal.raledgersolutions.com)"; exit 1; fi
+# DNS record name to create: the part before the registered domain ("portal" for portal.raledgersolutions.com, "@" for a bare domain)
+if [[ "$DOMAIN" == *.*.* ]]; then RECORD="${DOMAIN%%.*}"; ZONE="${DOMAIN#*.}"; else RECORD="@"; ZONE="$DOMAIN"; fi
 [[ $EUID -eq 0 ]] || { echo "Run with sudo."; exit 1; }
 REPO="https://github.com/ramiahmad1-sys/raledgersolutions.git"
 BRANCH="${BRANCH:-main}"
@@ -92,19 +98,21 @@ ReadWritePaths=$DATA
 WantedBy=multi-user.target
 UNIT
 
-cat > /etc/caddy/Caddyfile <<CADDY
+cat > /tmp/Caddyfile.new <<CADDY
 $DOMAIN {
 	encode gzip
 	request_body {
 		max_size 20MB
 	}
+	@notportal {
+		not path /portal/* /api/* /healthz
+	}
+	redir @notportal /portal/ 302
 	reverse_proxy 127.0.0.1:3000
 }
-
-www.$DOMAIN {
-	redir https://$DOMAIN{uri} permanent
-}
 CADDY
+caddy validate --config /tmp/Caddyfile.new --adapter caddyfile >/dev/null 2>&1 || { echo "Caddy config is invalid; not changed."; exit 1; }
+install -m 644 /tmp/Caddyfile.new /etc/caddy/Caddyfile
 
 cat > /usr/local/bin/raledger-backup <<'BK'
 #!/usr/bin/env bash
@@ -144,12 +152,11 @@ cat <<MSG
 
   Server IP address:  $IP
 
-  In GoDaddy DNS for $DOMAIN, set:
-    A      @    ->  $IP
-    CNAME  www  ->  $DOMAIN
-  (leave MX and TXT records alone)
+  In GoDaddy DNS for $ZONE, add ONE record:
+    Type A,  Name $RECORD,  Value $IP
+  (do not change the @ / www records of your website, or MX/TXT records)
 
-  After DNS updates, open https://$DOMAIN/portal/  (HTTPS is set up automatically)
+  After DNS updates, open https://$DOMAIN  (HTTPS is set up automatically)
 MSG
 if [[ -n "$FIRST_PASSWORD" ]]; then cat <<MSG
 
