@@ -326,5 +326,5 @@ const server = http.createServer(async (req, res) => {
     console.error(e); send(res, 500, { error: 'Server error' });
   }
 });
-if (require.main === module) server.listen(PORT, () => console.log(`RA Ledger Solutions on http://localhost:${PORT} (email notifications ${mailEnabled() ? 'on' : 'off'})`));
+if (require.main === module) server.listen(PORT, process.env.HOST || undefined, () => console.log(`RA Ledger Solutions on http://localhost:${PORT} (email notifications ${mailEnabled() ? 'on' : 'off'})`));
 module.exports = server;
