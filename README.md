@@ -1,7 +1,7 @@
 # RA Ledger Solutions
 
 Marketing site (static HTML) plus a client portal at `/portal/`, served by one small Node server.
-No npm dependencies. Requires **Node 22.5+** (uses the built-in `node:sqlite`).
+No npm dependencies. Requires **Node 22.13+** (uses the built-in `node:sqlite`).
 
 ## Run
 
@@ -42,12 +42,24 @@ Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
 
 The server refuses to send credentials or mail without TLS.
 
-## Deploying
+## Deploying (Render)
 
-The Node server needs a host that can run Node (a small VPS, Render, Fly.io, Railway, etc. with a
-persistent disk for `DATA_DIR`). Classic shared hosting that only runs Apache/PHP (the `.htaccess` here) cannot run it.
-Put it behind HTTPS (e.g. Caddy or nginx, or the platform's TLS) and set `NODE_ENV=production`.
-Point raledgersolutions.com at the server; it serves the website and the portal together.
+`render.yaml` defines everything: a Node web service on the Starter plan with a 5 GB disk at `/var/data`.
+
+1. Merge the portal PR into `main`.
+2. In Render: **New > Blueprint**, connect GitHub, pick `ramiahmad1-sys/raledgersolutions`, apply.
+3. When prompted, fill in `STAFF_EMAIL` and `STAFF_PASSWORD` (10+ chars); leave the SMTP ones blank to start with email off.
+4. Open the `https://raledgersolutions.onrender.com` URL Render gives you, sign in at `/portal/`, then
+   **delete `STAFF_PASSWORD`** from the service's Environment tab (it's only used on first start).
+5. Custom domain: service **Settings > Custom Domains**, add `raledgersolutions.com` and `www.raledgersolutions.com`.
+   In GoDaddy **DNS**, change only the `@` A record and the `www` CNAME to the values Render shows.
+   Leave MX/TXT records alone. Render issues the HTTPS certificate automatically.
+
+Pushing to `main` redeploys. Render snapshots the disk daily; also download a copy periodically.
+The server serves the whole site, so once DNS points to Render the old host is no longer used.
+
+Other hosts: any Node 22.13+ host with a persistent disk and HTTPS works; set the same variables.
+Apache/PHP-only shared hosting (the `.htaccess` here) cannot run it.
 
 ## Security notes
 - Passwords: scrypt with per-user salt; sessions are random tokens (only the hash is stored), HttpOnly + SameSite=Strict, 14 days.

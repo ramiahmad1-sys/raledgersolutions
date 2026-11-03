@@ -318,6 +318,7 @@ function serveStatic(req, res, url) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/healthz') { db.prepare('SELECT 1').get(); return send(res, 200, 'ok'); }
     if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url);
   } catch (e) {
     if (res.headersSent) return res.end();

@@ -1,0 +1,41 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Creates the web service (website + client portal) with a persistent disk for the database and uploads.
+services:
+  - type: web
+    name: raledgersolutions
+    runtime: node
+    plan: starter            # persistent disks need a paid plan
+    region: virginia
+    branch: main
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: portal-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: TRUST_PROXY
+        value: "1"
+      - key: PORTAL_URL
+        value: https://raledgersolutions.com
+      # Entered in the Render dashboard (never committed). Remove STAFF_PASSWORD after first login.
+      - key: STAFF_EMAIL
+        sync: false
+      - key: STAFF_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
