@@ -98,7 +98,8 @@ async function flush({ audience, clientId, kind, n }) {
   const to = recipients(audience, clientId);
   if (!client || !to.length) return;
   const noun = kind === 'message' ? (n === 1 ? 'a new message' : n + ' new messages')
-    : kind === 'report' ? (n === 1 ? 'a new report' : n + ' new reports') : (n === 1 ? 'a new document' : n + ' new documents');
+    : kind === 'report' ? (n === 1 ? 'a new report' : n + ' new reports')
+    : kind === 'invoice' ? (n === 1 ? 'a new invoice' : n + ' new invoices') : (n === 1 ? 'a new document' : n + ' new documents');
   const c = cfg(), name = clean(client.name);
   if (audience === 'staff') {
     await smtpSend({ to, subject: `${name}: ${noun}`, text: `${name} sent ${noun} in the client portal.\n\nSign in to view it: ${c.url}\n` });

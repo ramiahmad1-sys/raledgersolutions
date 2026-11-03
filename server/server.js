@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { db, DATA_DIR, checkPassword, hashPassword, createUser } = require('./db');
 const { notify, enabled: mailEnabled } = require('./mail');
+const billing = require('./billing');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT || 3000);
@@ -162,6 +163,8 @@ async function api(req, res, url) {
   let mm;
   if ((mm = p.match(/^\/api\/clients\/([\w-]+)$/)) && m === 'DELETE') {
     needStaff(user); scopeClient(user, mm[1]);
+    if (db.prepare('SELECT 1 FROM invoices WHERE client_id=? AND number IS NOT NULL').get(mm[1]))
+      throw new HttpError(409, 'This client has invoice history, which must be kept for your records. Void open invoices instead of deleting the client.');
     const ids = db.prepare('SELECT id FROM files WHERE client_id=?').all(mm[1]);
     db.prepare('DELETE FROM clients WHERE id=?').run(mm[1]);         // cascades to users, files, requests, messages
     for (const f of ids) fs.rmSync(path.join(DATA_DIR, 'files', f.id), { force: true });
@@ -225,7 +228,7 @@ async function api(req, res, url) {
   if (p === '/api/data' && m === 'GET') {
     const cid = scopeClient(user, url.searchParams.get('clientId'));
     return out({
-      client: db.prepare('SELECT id,name,contact,notify FROM clients WHERE id=?').get(cid),
+      client: db.prepare('SELECT id,name,contact,notify,fee_cents,fee_desc FROM clients WHERE id=?').get(cid),
       files: db.prepare('SELECT id,kind,name,size,period,note,by,date FROM files WHERE client_id=? ORDER BY date DESC, rowid DESC').all(cid),
       requests: db.prepare('SELECT * FROM requests WHERE client_id=?').all(cid),
       messages: db.prepare('SELECT id,sender,text,date FROM messages WHERE client_id=? ORDER BY date').all(cid)
@@ -289,6 +292,7 @@ async function api(req, res, url) {
     notify(user.role, cid, 'message');
     return out({ ok: true }, 201);
   }
+  if (await billing.handle({ req, m, p, url, user, readJson, out, str, bad, HttpError, needStaff, scopeClient })) return;
   throw new HttpError(404, 'Not found');
 }
 const me = u => {
