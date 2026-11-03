@@ -1,12 +1,9 @@
-/* RA Ledger Solutions client portal.
-   Static app: all data lives in this browser (IndexedDB). See the notice shown on the login page. */
+/* RA Ledger Solutions client portal front end. Talks to the server API in server/server.js. */
 'use strict';
 
-/* ---------- tiny helpers ---------- */
 const $app = document.getElementById('app');
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 const today = () => new Date().toISOString().slice(0, 10);
-const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+const fmtDate = d => d ? new Date(d.length === 10 ? d + 'T00:00:00' : d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 function h(tag, attrs, ...kids) {           // safe element builder: never uses innerHTML
   const el = document.createElement(tag);
@@ -21,91 +18,59 @@ function h(tag, attrs, ...kids) {           // safe element builder: never uses 
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600);
-}
-async function sha(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-/* ---------- IndexedDB ---------- */
-const STORES = ['meta', 'clients', 'files', 'requests', 'messages'];
-let dbp;
-function db() {
-  return dbp ||= new Promise((res, rej) => {
-    const r = indexedDB.open('ra-portal', 1);
-    r.onupgradeneeded = () => STORES.forEach(s => r.result.createObjectStore(s, { keyPath: 'id' }));
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
+/* ---------- API ---------- */
+async function api(method, path, body, raw) {
+  const opts = { method, credentials: 'same-origin', headers: { 'X-Requested-With': 'ra-portal' } };
+  if (raw) { opts.body = raw; if (raw.type) opts.headers['Content-Type'] = raw.type; }
+  else if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && path !== '/api/login' && path !== '/api/me') { state.me = null; route(); throw new Error('Please sign in again.'); }
+  if (!r.ok) throw new Error(data.error || 'Request failed (' + r.status + ')');
+  return data;
 }
-async function tx(store, mode, fn) {
-  const d = await db();
-  return new Promise((res, rej) => {
-    const t = d.transaction(store, mode), s = t.objectStore(store), out = fn(s);
-    t.oncomplete = () => res(out && 'result' in out ? out.result : out);
-    t.onerror = () => rej(t.error);
-  });
-}
-const all = s => tx(s, 'readonly', st => st.getAll());
-const get = (s, id) => tx(s, 'readonly', st => st.get(id));
-const put = (s, o) => tx(s, 'readwrite', st => { st.put(o); });
-const del = (s, id) => tx(s, 'readwrite', st => { st.delete(id); });
+/* run an action; show server errors as a toast instead of crashing */
+const act = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
 
-/* ---------- session ---------- */
-const session = {
-  get() { try { return JSON.parse(sessionStorage.getItem('ra-session')) } catch { return null } },
-  set(v) { sessionStorage.setItem('ra-session', JSON.stringify(v)) },
-  clear() { sessionStorage.removeItem('ra-session') }
-};
-function renderUserbar(s) {
+const state = { me: null };
+
+function renderUserbar() {
   const bar = document.getElementById('userbar'); bar.replaceChildren();
-  if (!s) return;
-  bar.append(h('span', {}, s.role === 'staff' ? 'Staff' : s.name),
-    h('button', { class: 'linkbtn', onclick: () => { session.clear(); route(); } }, 'Sign out'));
+  if (!state.me) return;
+  bar.append(h('span', {}, state.me.role === 'staff' ? 'Staff · ' + state.me.email : state.me.name),
+    h('button', { class: 'linkbtn', onclick: () => accountView() }, 'Account'),
+    h('button', { class: 'linkbtn', onclick: act(async () => { await api('POST', '/api/logout'); state.me = null; route(); }) }, 'Sign out'));
 }
 
-/* ---------- routing ---------- */
 async function route() {
-  const s = session.get();
-  renderUserbar(s);
+  if (!state.me) { try { state.me = await api('GET', '/api/me'); } catch { state.me = null; } }
+  renderUserbar();
   $app.replaceChildren();
-  if (!s) return loginView();
-  if (s.role === 'staff') return staffView();
-  const c = await get('clients', s.clientId);
-  if (!c) { session.clear(); return route(); }
-  return clientView(c);
+  if (!state.me) return loginView();
+  return state.me.role === 'staff' ? staffView() : clientView();
 }
 
-/* ---------- login ---------- */
-async function loginView() {
-  const staffHash = (await get('meta', 'staff'))?.hash;
-  const clients = await all('clients');
-  const clientSel = h('select', { id: 'cl', required: true }, h('option', { value: '' }, 'Select your company'),
-    clients.map(c => h('option', { value: c.id }, c.name)));
-  const clientForm = h('form', { class: 'stack', onsubmit: async e => {
+/* ---------- login & account ---------- */
+function loginView() {
+  const email = h('input', { type: 'email', required: true, autocomplete: 'username' });
+  const pw = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
+  const form = h('form', { class: 'stack', onsubmit: act(async e => {
     e.preventDefault();
-    const c = clients.find(x => x.id === clientSel.value);
-    if (!c || await sha(c.id + code.value.trim()) !== c.hash) return toast('Company or access code is incorrect.');
-    session.set({ role: 'client', clientId: c.id, name: c.name }); route();
-  } });
-  const code = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
-  clientForm.append(h('label', {}, 'Company', clientSel), h('label', {}, 'Access code', code), h('button', { class: 'btn' }, 'Sign in'));
-
-  const pw = h('input', { type: 'password', required: true, minlength: staffHash ? 1 : 8, autocomplete: staffHash ? 'current-password' : 'new-password' });
-  const staffForm = h('form', { class: 'stack', onsubmit: async e => {
-    e.preventDefault();
-    const hash = await sha('staff:' + pw.value);
-    if (!staffHash) await put('meta', { id: 'staff', hash });
-    else if (hash !== staffHash) return toast('Incorrect passcode.');
-    session.set({ role: 'staff' }); route();
-  } }, h('label', {}, staffHash ? 'Staff passcode' : 'Create a staff passcode (8+ characters)', pw),
-    h('button', { class: 'btn sec' }, staffHash ? 'Staff sign in' : 'Create passcode & sign in'));
-
+    state.me = await api('POST', '/api/login', { email: email.value, password: pw.value }); route();
+  }) }, h('label', {}, 'Email', email), h('label', {}, 'Password', pw), h('button', { class: 'btn' }, 'Sign in'));
   $app.append(h('div', { class: 'login' },
-    h('div', { class: 'card' }, h('h1', {}, 'Client sign in'), h('p', { class: 'muted' }, 'Upload documents, download your monthly reports, and message your accountant.'), clientForm),
-    h('div', { class: 'card' }, h('h2', {}, 'RA Ledger Solutions staff'), staffForm),
-    h('p', { class: 'notice' }, 'Prototype notice: this portal runs entirely in your browser and stores data on this device only. Clients and staff on different computers will not see each other’s data until a server backend is connected. Do not upload highly sensitive records (SSNs, bank logins) until then. Use Backup & restore (staff) to move data between devices.')));
+    h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form)));
+}
+function accountView() {
+  const cur = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
+  const np = h('input', { type: 'password', required: true, minlength: 10, autocomplete: 'new-password' });
+  $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: route }, '← Back')),
+    h('div', { class: 'card' }, h('h1', {}, 'Change password'), h('form', { class: 'stack', onsubmit: act(async e => {
+      e.preventDefault(); await api('POST', '/api/password', { current: cur.value, password: np.value }); toast('Password changed.'); route();
+    }) }, h('label', {}, 'Current password', cur), h('label', {}, 'New password (10+ characters)', np), h('div', {}, h('button', { class: 'btn' }, 'Update password')))));
 }
 
 /* ---------- shared widgets ---------- */
@@ -113,47 +78,42 @@ function tabs(names, active, onpick) {
   return h('div', { class: 'tabs', role: 'tablist' }, names.map(n =>
     h('button', { role: 'tab', 'aria-selected': String(n === active), onclick: () => onpick(n) }, n)));
 }
-async function downloadFile(f) {
-  const url = URL.createObjectURL(f.blob);
-  const a = h('a', { href: url, download: f.name }); document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
 const MAX = 15 * 1024 * 1024;
-async function saveFiles(fileList, base) {
-  for (const f of fileList) {
+async function uploadFiles(list, params) {
+  for (const f of list) {
     if (f.size > MAX) { toast(f.name + ' is over 15 MB and was skipped.'); continue; }
-    await put('files', { ...base, id: uid(), name: f.name, type: f.type, size: f.size, blob: f, date: today() });
+    const q = new URLSearchParams({ ...params, name: f.name });
+    await api('POST', '/api/files?' + q, undefined, f);
   }
 }
 function filesTable(files, { canDelete, onChange }) {
   if (!files.length) return h('p', { class: 'empty' }, 'Nothing here yet.');
   return h('table', {}, h('thead', {}, h('tr', {}, ['File', 'Period', 'Added', 'Size', ''].map(t => h('th', {}, t)))),
-    h('tbody', {}, files.sort((a, b) => b.date.localeCompare(a.date)).map(f => h('tr', {},
+    h('tbody', {}, files.map(f => h('tr', {},
       h('td', {}, f.name, f.note ? h('div', { class: 'muted' }, f.note) : null),
       h('td', {}, f.period || '—'), h('td', {}, fmtDate(f.date)), h('td', {}, fmtSize(f.size)),
-      h('td', {}, h('button', { class: 'btn sm sec', onclick: () => downloadFile(f) }, 'Download'), ' ',
-        canDelete ? h('button', { class: 'btn sm danger', onclick: async () => { if (confirm('Delete ' + f.name + '?')) { await del('files', f.id); onChange(); } } }, 'Delete') : null)))));
+      h('td', {}, h('a', { class: 'btn sm sec', href: '/api/files/' + f.id }, 'Download'), ' ',
+        canDelete ? h('button', { class: 'btn sm danger', onclick: act(async () => { if (confirm('Delete ' + f.name + '?')) { await api('DELETE', '/api/files/' + f.id); onChange(); } }) }, 'Delete') : null)))));
 }
-function requestsTable(reqs, { client, onChange, staff }) {
+function requestsTable(reqs, { onChange, staff }) {
   if (!reqs.length) return h('p', { class: 'empty' }, 'No requests.');
+  const sorted = [...reqs].sort((a, b) => a.status === b.status ? (a.due || '9').localeCompare(b.due || '9') : a.status === 'open' ? -1 : 1);
   return h('table', {}, h('thead', {}, h('tr', {}, ['Request', 'Due', 'Status', ''].map(t => h('th', {}, t)))),
-    h('tbody', {}, reqs.sort((a, b) => (a.status === b.status ? (a.due || '9').localeCompare(b.due || '9') : a.status === 'open' ? -1 : 1)).map(r => {
+    h('tbody', {}, sorted.map(r => {
       const late = r.status === 'open' && r.due && r.due < today();
       return h('tr', {}, h('td', {}, r.title), h('td', {}, fmtDate(r.due) || '—'),
         h('td', {}, h('span', { class: 'pill ' + (late ? 'late' : r.status) }, late ? 'Overdue' : r.status === 'open' ? 'Open' : 'Done')),
-        h('td', {}, h('button', { class: 'btn sm sec', onclick: async () => { r.status = r.status === 'open' ? 'done' : 'open'; await put('requests', r); onChange(); } }, r.status === 'open' ? 'Mark done' : 'Reopen'), ' ',
-          staff ? h('button', { class: 'btn sm danger', onclick: async () => { await del('requests', r.id); onChange(); } }, 'Remove') : null));
+        h('td', {}, h('button', { class: 'btn sm sec', onclick: act(async () => { await api('PATCH', '/api/requests/' + r.id, { status: r.status === 'open' ? 'done' : 'open' }); onChange(); }) }, r.status === 'open' ? 'Mark done' : 'Reopen'), ' ',
+          staff ? h('button', { class: 'btn sm danger', onclick: act(async () => { await api('DELETE', '/api/requests/' + r.id); onChange(); }) }, 'Remove') : null));
     })));
 }
-async function messagesPanel(client, from, rerender) {
-  const msgs = (await all('messages')).filter(m => m.clientId === client.id).sort((a, b) => a.date.localeCompare(b.date));
-  const box = h('div', { class: 'msgs' }, msgs.length ? msgs.map(m => h('div', { class: 'msg' + (m.from === from ? ' me' : '') },
-    m.text, h('time', {}, (m.from === 'staff' ? 'RA Ledger' : client.name) + ' · ' + new Date(m.date).toLocaleString()))) : h('p', { class: 'empty' }, 'No messages yet.'));
-  const ta = h('textarea', { rows: 3, required: true, 'aria-label': 'Message' });
-  const form = h('form', { class: 'stack', onsubmit: async e => {
-    e.preventDefault();
-    await put('messages', { id: uid(), clientId: client.id, from, text: ta.value.trim(), date: new Date().toISOString() }); rerender();
-  } }, ta, h('div', {}, h('button', { class: 'btn' }, 'Send')));
+function messagesPanel(data, me, rerender) {
+  const box = h('div', { class: 'msgs' }, data.messages.length ? data.messages.map(m => h('div', { class: 'msg' + (m.sender === me ? ' me' : '') },
+    m.text, h('time', {}, (m.sender === 'staff' ? 'RA Ledger' : data.client.name) + ' · ' + new Date(m.date).toLocaleString()))) : h('p', { class: 'empty' }, 'No messages yet.'));
+  const ta = h('textarea', { rows: 3, required: true, maxlength: 4000, 'aria-label': 'Message' });
+  const form = h('form', { class: 'stack', onsubmit: act(async e => {
+    e.preventDefault(); await api('POST', '/api/messages', { clientId: data.client.id, text: ta.value }); rerender();
+  }) }, ta, h('div', {}, h('button', { class: 'btn' }, 'Send')));
   setTimeout(() => { box.scrollTop = box.scrollHeight; });
   return h('div', {}, box, form);
 }
@@ -161,124 +121,96 @@ function uploadForm({ withPeriod, label, onSubmit }) {
   const file = h('input', { type: 'file', multiple: true, required: true });
   const period = withPeriod ? h('input', { type: 'month', value: today().slice(0, 7) }) : null;
   const note = h('input', { type: 'text', maxlength: 140, placeholder: 'Optional note' });
-  return h('form', { class: 'stack', onsubmit: async e => { e.preventDefault(); await onSubmit([...file.files], period?.value || '', note.value.trim()); } },
-    h('label', {}, label, file), h('div', { class: 'row' }, withPeriod ? h('label', {}, 'Period', period) : null, h('label', {}, 'Note', note)),
-    h('div', {}, h('button', { class: 'btn' }, 'Upload')));
+  const btn = h('button', { class: 'btn' }, 'Upload');
+  return h('form', { class: 'stack', onsubmit: act(async e => {
+    e.preventDefault(); btn.disabled = true; btn.textContent = 'Uploading…';
+    try { await onSubmit([...file.files], period?.value || '', note.value.trim()); } finally { btn.disabled = false; btn.textContent = 'Upload'; }
+  }) }, h('label', {}, label, file), h('div', { class: 'row' }, withPeriod ? h('label', {}, 'Period', period) : null, h('label', {}, 'Note', note)), h('div', {}, btn));
 }
 
 /* ---------- client view ---------- */
-async function clientView(client, tab = 'Overview') {
-  const files = (await all('files')).filter(f => f.clientId === client.id);
-  const reqs = (await all('requests')).filter(r => r.clientId === client.id);
+async function clientView(tab = 'Overview') {
+  const data = await api('GET', '/api/data');
+  const { client, files, requests: reqs } = data;
   const reports = files.filter(f => f.kind === 'report'), docs = files.filter(f => f.kind === 'doc');
   const open = reqs.filter(r => r.status === 'open');
-  const again = t => { $app.replaceChildren(); clientView(client, t || tab); };
+  const again = t => clientView(t || tab);
   let body;
   if (tab === 'Overview') {
     body = h('div', {}, h('div', { class: 'grid' },
       h('div', { class: 'card' }, h('div', { class: 'stat' }, open.length), 'open requests from your accountant'),
       h('div', { class: 'card' }, h('div', { class: 'stat' }, reports.length), 'reports available'),
       h('div', { class: 'card' }, h('div', { class: 'stat' }, docs.length), 'documents you’ve sent')),
-      h('div', { class: 'card' }, h('h2', {}, 'Needs your attention'), open.length ? requestsTable(open, { client, onChange: again }) : h('p', { class: 'empty' }, 'You’re all caught up.')));
+      h('div', { class: 'card' }, h('h2', {}, 'Needs your attention'), open.length ? requestsTable(open, { onChange: again }) : h('p', { class: 'empty' }, 'You’re all caught up.')));
   } else if (tab === 'Reports') {
     body = h('div', { class: 'card' }, h('h2', {}, 'Monthly reports'), filesTable(reports, { onChange: again }));
   } else if (tab === 'Documents') {
     body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Send documents'), h('p', { class: 'muted' }, 'Bank and card statements, receipts, invoices, payroll records. Up to 15 MB per file.'),
-      uploadForm({ withPeriod: true, label: 'Choose files', onSubmit: async (fl, p, n) => { await saveFiles(fl, { clientId: client.id, kind: 'doc', period: p, note: n, by: 'client' }); toast('Uploaded.'); again(); } })),
+      uploadForm({ withPeriod: true, label: 'Choose files', onSubmit: async (fl, p, n) => { await uploadFiles(fl, { period: p, note: n }); toast('Uploaded.'); again(); } })),
       h('div', { class: 'card' }, h('h2', {}, 'Your uploads'), filesTable(docs, { canDelete: true, onChange: again })));
   } else if (tab === 'Requests') {
-    body = h('div', { class: 'card' }, h('h2', {}, 'Requests'), requestsTable(reqs, { client, onChange: again }));
+    body = h('div', { class: 'card' }, h('h2', {}, 'Requests'), requestsTable(reqs, { onChange: again }));
   } else {
-    body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), await messagesPanel(client, 'client', () => again('Messages')));
+    body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), messagesPanel(data, 'client', () => again('Messages')));
   }
   $app.replaceChildren(h('h1', {}, 'Welcome, ' + client.name), tabs(['Overview', 'Reports', 'Documents', 'Requests', 'Messages'], tab, again), body);
 }
 
 /* ---------- staff view ---------- */
-async function staffView(state = {}) {
-  const re = s => { $app.replaceChildren(); staffView(s ?? state); };
-  const clients = (await all('clients')).sort((a, b) => a.name.localeCompare(b.name));
-  if (state.clientId) {
-    const c = clients.find(x => x.id === state.clientId);
-    if (c) return staffClient(c, state.tab || 'Reports', re);
-  }
-  const files = await all('files'), reqs = await all('requests'), msgs = await all('messages');
-  const rows = clients.map(c => {
-    const openN = reqs.filter(r => r.clientId === c.id && r.status === 'open').length;
-    const last = msgs.filter(m => m.clientId === c.id).sort((a, b) => b.date.localeCompare(a.date))[0];
-    return h('tr', {}, h('td', {}, h('strong', {}, c.name), h('div', { class: 'muted' }, c.contact || '')),
-      h('td', {}, files.filter(f => f.clientId === c.id && f.by === 'client').length + ' docs'),
-      h('td', {}, openN ? h('span', { class: 'pill open' }, openN + ' open') : h('span', { class: 'pill done' }, 'none')),
-      h('td', {}, last ? (last.from === 'client' ? 'Client: ' : 'You: ') + last.text.slice(0, 40) : '—'),
-      h('td', {}, h('button', { class: 'btn sm', onclick: () => re({ clientId: c.id }) }, 'Open')));
-  });
-  const name = h('input', { required: true }), contact = h('input', { placeholder: 'Contact name / email' }), code = h('input', { required: true, minlength: 6, placeholder: 'Min 6 characters' });
-  const addForm = h('form', { class: 'stack', onsubmit: async e => {
+async function staffView(view = {}) {
+  const re = v => staffView(v ?? view);
+  if (view.clientId) return staffClient(view.clientId, view.tab || 'Reports', re);
+  const clients = await api('GET', '/api/clients');
+  const rows = clients.map(c => h('tr', {}, h('td', {}, h('strong', {}, c.name), h('div', { class: 'muted' }, c.email || '')),
+    h('td', {}, c.docs + ' docs'),
+    h('td', {}, c.open_requests ? h('span', { class: 'pill open' }, c.open_requests + ' open') : h('span', { class: 'pill done' }, 'none')),
+    h('td', {}, c.last_message ? (c.last_message.startsWith('client') ? 'Client' : 'You') + c.last_message.slice(c.last_message.indexOf(':')) : '—'),
+    h('td', {}, h('button', { class: 'btn sm', onclick: () => re({ clientId: c.id }) }, 'Open'))));
+  const name = h('input', { required: true, maxlength: 150 }), contact = h('input', { maxlength: 150, placeholder: 'Contact person' });
+  const email = h('input', { type: 'email', required: true }), pw = h('input', { required: true, minlength: 10, placeholder: 'Temporary, 10+ characters', autocomplete: 'off' });
+  const addForm = h('form', { class: 'stack', onsubmit: act(async e => {
     e.preventDefault();
-    const id = uid();
-    await put('clients', { id, name: name.value.trim(), contact: contact.value.trim(), hash: await sha(id + code.value.trim()), created: today() });
-    toast('Client added. Give them the access code securely.'); re({});
-  } }, h('div', { class: 'row' }, h('label', {}, 'Company name', name), h('label', {}, 'Contact', contact), h('label', {}, 'Access code', code)), h('div', {}, h('button', { class: 'btn' }, 'Add client')));
-
-  const restore = h('input', { type: 'file', accept: 'application/json', hidden: true, onchange: async e => { try { await importBackup(e.target.files[0]); toast('Backup restored.'); route(); } catch (err) { toast('Restore failed: ' + err.message); } } });
+    await api('POST', '/api/clients', { name: name.value, contact: contact.value, email: email.value, password: pw.value });
+    toast('Client added. Send them the login details securely and ask them to change the password.'); re({});
+  }) }, h('div', { class: 'row' }, h('label', {}, 'Company name', name), h('label', {}, 'Contact', contact)),
+    h('div', { class: 'row' }, h('label', {}, 'Client login email', email), h('label', {}, 'Temporary password', pw)), h('div', {}, h('button', { class: 'btn' }, 'Add client')));
   $app.replaceChildren(h('h1', {}, 'Clients'),
     h('div', { class: 'card' }, clients.length ? h('table', {}, h('thead', {}, h('tr', {}, ['Client', 'Uploads', 'Requests', 'Last message', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)) : h('p', { class: 'empty' }, 'No clients yet. Add your first one below.')),
-    h('div', { class: 'card' }, h('h2', {}, 'Add a client'), addForm),
-    h('div', { class: 'card' }, h('h2', {}, 'Backup & restore'), h('p', { class: 'muted' }, 'Data is stored in this browser only. Export regularly; restore replaces everything on this device.'),
-      h('button', { class: 'btn sec', onclick: exportBackup }, 'Export backup'), ' ', h('button', { class: 'btn sec', onclick: () => restore.click() }, 'Restore from backup'), restore));
+    h('div', { class: 'card' }, h('h2', {}, 'Add a client'), addForm));
 }
 
-async function staffClient(c, tab, re) {
-  const files = (await all('files')).filter(f => f.clientId === c.id);
-  const reqs = (await all('requests')).filter(r => r.clientId === c.id);
-  const here = t => re({ clientId: c.id, tab: t || tab });
+async function staffClient(clientId, tab, re) {
+  const data = await api('GET', '/api/data?clientId=' + encodeURIComponent(clientId));
+  const { client: c, files, requests: reqs } = data;
+  const here = t => re({ clientId, tab: t || tab });
   let body;
   if (tab === 'Reports') {
     body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Publish a report'),
-      uploadForm({ withPeriod: true, label: 'Report files (P&L, balance sheet, etc.)', onSubmit: async (fl, p, n) => { await saveFiles(fl, { clientId: c.id, kind: 'report', period: p, note: n, by: 'staff' }); toast('Published.'); here(); } })),
+      uploadForm({ withPeriod: true, label: 'Report files (P&L, balance sheet, etc.)', onSubmit: async (fl, p, n) => { await uploadFiles(fl, { clientId, kind: 'report', period: p, note: n }); toast('Published.'); here(); } })),
       h('div', { class: 'card' }, h('h2', {}, 'Published reports'), filesTable(files.filter(f => f.kind === 'report'), { canDelete: true, onChange: here })));
   } else if (tab === 'Client uploads') {
     body = h('div', { class: 'card' }, h('h2', {}, 'Documents from ' + c.name), filesTable(files.filter(f => f.kind === 'doc'), { canDelete: true, onChange: here }));
   } else if (tab === 'Requests') {
-    const title = h('input', { required: true, placeholder: 'e.g. March bank statement' }), due = h('input', { type: 'date' });
-    body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'New request'), h('form', { class: 'stack', onsubmit: async e => {
-      e.preventDefault(); await put('requests', { id: uid(), clientId: c.id, title: title.value.trim(), due: due.value, status: 'open', created: today() }); here();
-    } }, h('div', { class: 'row' }, h('label', {}, 'What do you need?', title), h('label', {}, 'Due', due)), h('div', {}, h('button', { class: 'btn' }, 'Send request')))),
-      h('div', { class: 'card' }, h('h2', {}, 'All requests'), requestsTable(reqs, { client: c, onChange: here, staff: true })));
+    const title = h('input', { required: true, maxlength: 200, placeholder: 'e.g. March bank statement' }), due = h('input', { type: 'date' });
+    body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'New request'), h('form', { class: 'stack', onsubmit: act(async e => {
+      e.preventDefault(); await api('POST', '/api/requests', { clientId, title: title.value, due: due.value }); here();
+    }) }, h('div', { class: 'row' }, h('label', {}, 'What do you need?', title), h('label', {}, 'Due', due)), h('div', {}, h('button', { class: 'btn' }, 'Send request')))),
+      h('div', { class: 'card' }, h('h2', {}, 'All requests'), requestsTable(reqs, { onChange: here, staff: true })));
+  } else if (tab === 'Account') {
+    const np = h('input', { required: true, minlength: 10, autocomplete: 'off', placeholder: '10+ characters' });
+    body = h('div', { class: 'card' }, h('h2', {}, 'Reset client password'), h('form', { class: 'stack', onsubmit: act(async e => {
+      e.preventDefault(); await api('POST', `/api/clients/${clientId}/password`, { password: np.value }); np.value = ''; toast('Password reset. Client has been signed out.');
+    }) }, h('label', {}, 'New temporary password', np), h('div', {}, h('button', { class: 'btn' }, 'Reset password'))));
   } else {
-    body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), await messagesPanel(c, 'staff', () => here('Messages')));
+    body = h('div', { class: 'card' }, h('h2', {}, 'Messages'), messagesPanel(data, 'staff', () => here('Messages')));
   }
-  const danger = h('button', { class: 'btn danger sm', onclick: async () => {
-    if (!confirm('Delete ' + c.name + ' and ALL their files, requests and messages?')) return;
-    for (const f of files) await del('files', f.id);
-    for (const r of reqs) await del('requests', r.id);
-    for (const m of (await all('messages')).filter(m => m.clientId === c.id)) await del('messages', m.id);
-    await del('clients', c.id); re({});
-  } }, 'Delete client');
+  const danger = h('button', { class: 'btn danger sm', onclick: act(async () => {
+    if (!confirm('Delete ' + c.name + ' and ALL their files, requests and messages? This cannot be undone.')) return;
+    await api('DELETE', '/api/clients/' + clientId); re({});
+  }) }, 'Delete client');
   $app.replaceChildren(h('p', {}, h('button', { class: 'btn sm sec', onclick: () => re({}) }, '← All clients')),
-    h('div', { class: 'row' }, h('h1', {}, c.name), h('div', { style: 'flex:0 0 auto' }, danger)),
-    tabs(['Reports', 'Client uploads', 'Requests', 'Messages'], tab, here), body);
+    h('div', { class: 'row' }, h('h1', {}, c.name), h('div', { class: 'fit' }, danger)),
+    tabs(['Reports', 'Client uploads', 'Requests', 'Messages', 'Account'], tab, here), body);
 }
 
-/* ---------- backup ---------- */
-const b64 = blob => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
-async function exportBackup() {
-  const out = { version: 1, exported: new Date().toISOString() };
-  for (const s of STORES) out[s] = await all(s);
-  out.files = await Promise.all(out.files.map(async f => ({ ...f, blob: await b64(f.blob) })));
-  const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  downloadFile({ blob, name: 'ra-portal-backup-' + today() + '.json' });
-}
-async function importBackup(file) {
-  const data = JSON.parse(await file.text());
-  if (data.version !== 1) throw new Error('unrecognized file');
-  if (!confirm('This replaces all portal data on this device. Continue?')) return;
-  for (const s of STORES) for (const o of await all(s)) await del(s, o.id);
-  for (const s of STORES) for (const o of data[s] || []) {
-    if (s === 'files') o.blob = await (await fetch(o.blob)).blob();
-    await put(s, o);
-  }
-  session.clear();
-}
-
-route().catch(e => { $app.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Portal unavailable'), h('p', {}, 'This browser blocked local storage (private mode?). ' + e.message))); });
+route().catch(e => { $app.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Portal unavailable'), h('p', {}, e.message))); });
