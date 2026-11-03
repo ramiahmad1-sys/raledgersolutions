@@ -10,8 +10,8 @@ STAFF_EMAIL=you@example.com STAFF_PASSWORD='a long passphrase' npm start
 ```
 
 Open http://localhost:3000. On first start the staff account is created from those variables
-(afterwards they are ignored, so you can remove them). Add more staff with
-`npm run create-user -- staff <email> <password>`. Client accounts are created from the staff screen.
+(afterwards they are ignored, so you can remove them). Add more staff from the portal's **Staff accounts** screen (or
+`npm run create-user -- staff <email> <password>`). Client accounts are created from the Clients screen.
 
 | Variable | Default | Purpose |
 |---|---|---|

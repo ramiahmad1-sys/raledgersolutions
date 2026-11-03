@@ -160,6 +160,7 @@ async function clientView(tab = 'Overview') {
 async function staffView(view = {}) {
   const re = v => staffView(v ?? view);
   if (view.clientId) return staffClient(view.clientId, view.tab || 'Reports', re);
+  if (view.page === 'staff') return staffAccounts(re);
   const clients = await api('GET', '/api/clients');
   const rows = clients.map(c => h('tr', {}, h('td', {}, h('strong', {}, c.name), h('div', { class: 'muted' }, c.email || '')),
     h('td', {}, c.docs + ' docs'),
@@ -174,9 +175,31 @@ async function staffView(view = {}) {
     toast('Client added. Send them the login details securely and ask them to change the password.'); re({});
   }) }, h('div', { class: 'row' }, h('label', {}, 'Company name', name), h('label', {}, 'Contact', contact)),
     h('div', { class: 'row' }, h('label', {}, 'Client login email', email), h('label', {}, 'Temporary password', pw)), h('div', {}, h('button', { class: 'btn' }, 'Add client')));
-  $app.replaceChildren(h('h1', {}, 'Clients'),
+  $app.replaceChildren(sectionNav('clients', re), h('h1', {}, 'Clients'),
     h('div', { class: 'card' }, clients.length ? h('table', {}, h('thead', {}, h('tr', {}, ['Client', 'Uploads', 'Requests', 'Last message', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)) : h('p', { class: 'empty' }, 'No clients yet. Add your first one below.')),
     h('div', { class: 'card' }, h('h2', {}, 'Add a client'), addForm));
+}
+
+function sectionNav(active, re) {
+  return tabs(['Clients', 'Staff accounts'], active === 'staff' ? 'Staff accounts' : 'Clients', n => re(n === 'Clients' ? {} : { page: 'staff' }));
+}
+async function staffAccounts(re) {
+  const list = await api('GET', '/api/staff');
+  const here = () => re({ page: 'staff' });
+  const rows = list.map(u => {
+    const np = () => { const v = prompt('New temporary password for ' + u.email + ' (10+ characters):'); return v; };
+    return h('tr', {}, h('td', {}, u.email, u.you ? h('span', { class: 'pill done' }, 'You') : null), h('td', {}, fmtDate(u.created)),
+      h('td', {}, u.you ? h('span', { class: 'muted' }, 'Use Account to change your password') : [
+        h('button', { class: 'btn sm sec', onclick: act(async () => { const v = np(); if (!v) return; await api('POST', `/api/staff/${u.id}/password`, { password: v }); toast('Password reset. They have been signed out.'); }) }, 'Reset password'), ' ',
+        h('button', { class: 'btn sm danger', onclick: act(async () => { if (!confirm('Remove ' + u.email + '? They will be signed out immediately.')) return; await api('DELETE', '/api/staff/' + u.id); toast('Removed.'); here(); }) }, 'Remove')]));
+  });
+  const email = h('input', { type: 'email', required: true }), pw = h('input', { required: true, minlength: 10, autocomplete: 'off', placeholder: 'Temporary, 10+ characters' });
+  $app.replaceChildren(sectionNav('staff', re), h('h1', {}, 'Staff accounts'),
+    h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Email', 'Added', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)),
+      h('p', { class: 'muted' }, 'Staff can see every client\u2019s data and manage all accounts. Only add people you trust. If email notifications are on, each staff login also receives them.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Add a staff member'), h('form', { class: 'stack', onsubmit: act(async e => {
+      e.preventDefault(); await api('POST', '/api/staff', { email: email.value, password: pw.value }); toast('Staff member added. Share the temporary password securely.'); here();
+    }) }, h('div', { class: 'row' }, h('label', {}, 'Email', email), h('label', {}, 'Temporary password', pw)), h('div', {}, h('button', { class: 'btn' }, 'Add staff member')))));
 }
 
 async function staffClient(clientId, tab, re) {

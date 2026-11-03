@@ -175,6 +175,38 @@ async function api(req, res, url) {
     return out({ ok: r.changes > 0 });
   }
 
+  /* staff accounts (staff only) */
+  if (p === '/api/staff' && m === 'GET') {
+    needStaff(user);
+    return out(db.prepare("SELECT id,email,created FROM users WHERE role='staff' ORDER BY email").all().map(r => ({ ...r, you: r.id === user.id })));
+  }
+  if (p === '/api/staff' && m === 'POST') {
+    needStaff(user);
+    const b = await readJson(req), email = str(b.email, 200).toLowerCase(), pw = str(b.password, 200);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Enter a valid email.');
+    if (pw.length < 10) throw bad('Password must be at least 10 characters.');
+    if (db.prepare('SELECT 1 FROM users WHERE email=?').get(email)) throw new HttpError(409, 'That email is already in use.');
+    return out({ id: createUser({ email, password: pw, role: 'staff' }) }, 201);
+  }
+  if ((mm = p.match(/^\/api\/staff\/([\w-]+)$/)) && m === 'DELETE') {
+    needStaff(user);
+    const t = db.prepare("SELECT id FROM users WHERE id=? AND role='staff'").get(mm[1]);
+    if (!t) throw new HttpError(404, 'Not found');
+    if (t.id === user.id) throw bad('You cannot delete your own account.');
+    db.prepare('DELETE FROM users WHERE id=?').run(t.id);            // sessions cascade, so they are signed out immediately
+    return out({ ok: true });
+  }
+  if ((mm = p.match(/^\/api\/staff\/([\w-]+)\/password$/)) && m === 'POST') {
+    needStaff(user);
+    const t = db.prepare("SELECT id FROM users WHERE id=? AND role='staff'").get(mm[1]);
+    if (!t) throw new HttpError(404, 'Not found');
+    if (t.id === user.id) throw bad('Use Account > Change password for your own password.');
+    const pw = str((await readJson(req)).password, 200); if (pw.length < 10) throw bad('Password must be at least 10 characters.');
+    db.prepare('UPDATE users SET pw=? WHERE id=?').run(hashPassword(pw), t.id);
+    db.prepare('DELETE FROM sessions WHERE user_id=?').run(t.id);
+    return out({ ok: true });
+  }
+
   /* everything for one client */
   if (p === '/api/data' && m === 'GET') {
     const cid = scopeClient(user, url.searchParams.get('clientId'));

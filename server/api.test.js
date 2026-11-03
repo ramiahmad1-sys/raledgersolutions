@@ -77,6 +77,41 @@ test('end to end with isolation between clients', async () => {
   assert.ok(fs.readdirSync(path.join(process.env.DATA_DIR, 'files')).length < files);
 });
 
+test('staff account management', async () => {
+  const s1 = await login('staff@ra.test', 'staff-password-1');
+  const c = await call('POST', '/api/clients', { cookie: s1, json: { name: 'Gamma', email: 'g@gamma.test', password: 'gamma-password-1' } });
+  const cl = await login('g@gamma.test', 'gamma-password-1');
+  assert.equal((await call('GET', '/api/staff', { cookie: cl })).status, 403);
+  assert.equal((await call('POST', '/api/staff', { cookie: cl, json: {} })).status, 403);
+
+  assert.equal((await call('POST', '/api/staff', { cookie: s1, json: { email: 'bad', password: 'long-enough-pw' } })).status, 400);
+  assert.equal((await call('POST', '/api/staff', { cookie: s1, json: { email: 'new@ra.test', password: 'short' } })).status, 400);
+  assert.equal((await call('POST', '/api/staff', { cookie: s1, json: { email: 'g@gamma.test', password: 'long-enough-pw' } })).status, 409);
+  const made = await call('POST', '/api/staff', { cookie: s1, json: { email: 'New@RA.test', password: 'long-enough-pw' } });
+  assert.equal(made.status, 201);
+  const list = (await call('GET', '/api/staff', { cookie: s1 })).data;
+  assert.deepEqual(list.map(u => u.email).sort(), ['new@ra.test', 'staff@ra.test']);        // client accounts are not listed
+  assert.ok(list.find(u => u.email === 'staff@ra.test').you);
+
+  const s2 = await login('new@ra.test', 'long-enough-pw'); assert.ok(s2);
+  assert.equal((await call('GET', '/api/clients', { cookie: s2 })).status, 200);
+  // cannot delete yourself, cannot use staff routes on a client id
+  assert.equal((await call('DELETE', '/api/staff/' + made.data.id, { cookie: s2 })).status, 400);
+  assert.equal((await call('POST', `/api/staff/${made.data.id}/password`, { cookie: s2, json: { password: 'another-long-pw' } })).status, 400);
+  assert.equal((await call('DELETE', '/api/staff/' + c.data.id, { cookie: s1 })).status, 404);
+
+  // reset signs the target out; removal signs out and blocks login
+  assert.equal((await call('POST', `/api/staff/${made.data.id}/password`, { cookie: s1, json: { password: 'another-long-pw' } })).status, 200);
+  assert.equal((await call('GET', '/api/me', { cookie: s2 })).status, 401);
+  const s3 = await login('new@ra.test', 'another-long-pw'); assert.ok(s3);
+  assert.equal((await call('DELETE', '/api/staff/' + made.data.id, { cookie: s1 })).status, 200);
+  assert.equal((await call('GET', '/api/me', { cookie: s3 })).status, 401);
+  assert.equal((await call('POST', '/api/login', { json: { email: 'new@ra.test', password: 'another-long-pw' } })).status, 401);
+  // the last remaining staff user cannot be removed (only deletable by someone else, so self-delete rule covers it)
+  const only = list.find(u => u.email === 'staff@ra.test');
+  assert.equal((await call('DELETE', '/api/staff/' + only.id, { cookie: s1 })).status, 400);
+});
+
 test('login is throttled after repeated failures', async () => {
   let last;
   for (let i = 0; i < 10; i++) last = await call('POST', '/api/login', { json: { email: 'nobody@x.test', password: 'wrong' } });
