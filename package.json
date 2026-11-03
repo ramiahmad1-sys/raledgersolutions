@@ -1,0 +1,11 @@
+{
+  "name": "raledgersolutions",
+  "private": true,
+  "description": "RA Ledger Solutions website and client portal server (no npm dependencies)",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/server.js",
+    "create-user": "node --disable-warning=ExperimentalWarning server/create-user.js",
+    "test": "node --disable-warning=ExperimentalWarning --test server/*.test.js"
+  }
+}
