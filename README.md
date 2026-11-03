@@ -42,6 +42,26 @@ Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
 
 The server refuses to send credentials or mail without TLS.
 
+## Deploying (Google Cloud free server)
+
+Runs at $0/month on Google Cloud's always-free `e2-micro` VM, which keeps data on a 30 GB disk.
+
+1. Create the VM in **Compute Engine > VM instances**:
+   - Region **us-east1**, **us-central1** or **us-west1** (only these are free).
+   - Machine type **e2-micro**.
+   - Boot disk: **Debian 12**, type **Standard persistent disk** (not Balanced), **30 GB**.
+   - Firewall: allow **HTTP** and **HTTPS**.
+2. **VPC network > IP addresses**: promote the VM's external IP to **static** so it never changes.
+3. Click **SSH** on the VM and run (with your domain and staff email):
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/ramiahmad1-sys/raledgersolutions/main/deploy/gcp-setup.sh | sudo bash -s -- raledgersolutions.com you@example.com
+   ```
+   It prints the server IP and a one-time staff password.
+4. In GoDaddy DNS: `A @` to the server IP and `CNAME www` to `raledgersolutions.com`. HTTPS is issued automatically.
+
+Afterwards: `sudo raledger-update` deploys the latest `main`; email settings live in `/etc/raledger.env`.
+Daily backups go to `/var/lib/raledger/backups` (14 days, same disk).
+
 ## Deploying (Render)
 
 `render.yaml` defines everything: a Node web service on the Starter plan with a 5 GB disk at `/var/data`.
