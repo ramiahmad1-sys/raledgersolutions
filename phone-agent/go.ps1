@@ -23,15 +23,19 @@ Start-Sleep 1
 Step "Groq key"
 $sec = Read-Host "Paste your Groq key (hidden), or just press Enter to skip" -AsSecureString
 $key = [System.Net.NetworkCredential]::new('', $sec).Password
-if ($key) { $env:GROQ_API_KEY = $key.Trim(); Write-Host "Key set." }
+if ($key) {
+  $key = $key.Trim()
+  if (-not $key.StartsWith('gsk_') -or $key.Length -lt 30) { Write-Host "Warning: that does not look like a Groq key (should start with gsk_ and be long). The paste may not have worked - use Ctrl+V or right-click." -ForegroundColor Yellow }
+  $env:GROQ_API_KEY = $key; Write-Host "Key set ($($key.Length) characters)."
+}
 else { Write-Host "No key: callers will only hear 'please email us'." -ForegroundColor Yellow }
 
 Step "Starting server (new window - leave it open)"
 Start-Process node -ArgumentList 'server.js' -WorkingDirectory $dir
 $ok = $false
-for ($i = 0; $i -lt 15; $i++) {
+for ($i = 0; $i -lt 20; $i++) {
   Start-Sleep 1
-  try { if ((Invoke-WebRequest http://localhost:3000 -UseBasicParsing -TimeoutSec 2).Content -match 'running') { $ok = $true; break } } catch {}
+  try { if ((Invoke-WebRequest http://localhost:3000 -UseBasicParsing -TimeoutSec 2).RawContent -match 'running') { $ok = $true; break } } catch {}
 }
 if (-not $ok) { Fail "Server did not start. Look at the server window for an error." }
 Write-Host "Server OK on http://localhost:3000"
@@ -55,7 +59,7 @@ Step "Testing public address (can take up to a minute)"
 $ok = $false
 for ($i = 0; $i -lt 30; $i++) {
   Start-Sleep 2
-  try { if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 5).Content -match 'running') { $ok = $true; break } } catch {}
+  try { if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 5).RawContent -match 'running') { $ok = $true; break } } catch {}
 }
 if (-not $ok) { Fail "Public address not reachable yet ($url). Leave both windows open and try it in Chrome in a minute." }
 

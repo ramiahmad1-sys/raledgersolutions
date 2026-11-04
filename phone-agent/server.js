@@ -70,7 +70,7 @@ const server = http.createServer((req, res) => {
   req.on('end', async () => {
     const p = Object.fromEntries(new URLSearchParams(body));
     const send = xml => { res.writeHead(200, { 'Content-Type': 'text/xml' }); res.end(xml); };
-    if (req.method === 'GET') { res.writeHead(200); return res.end('RA Ledger phone agent is running'); }
+    if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('RA Ledger phone agent is running'); }
     if (!validSignature(req, p)) { res.writeHead(403); return res.end('Forbidden'); }
 
     const sid = p.CallSid || 'test';
