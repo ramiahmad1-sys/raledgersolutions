@@ -8,7 +8,7 @@ const SYSTEM = require('./knowledge');
 
 const PORT = process.env.PORT || 3000;
 const GROQ_KEY = process.env.GROQ_API_KEY;
-const MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 const NTFY_TOPIC = process.env.NTFY_TOPIC; // optional free push notifications via ntfy.sh
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN; // optional: validates requests really come from Twilio
 const PUBLIC_URL = process.env.PUBLIC_URL; // required with TWILIO_AUTH_TOKEN, e.g. https://abc.ngrok-free.app
@@ -33,7 +33,7 @@ async function think(history) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
     body: JSON.stringify({
-      model: MODEL, temperature: 0.3, max_tokens: 200,
+      model: MODEL, temperature: 0.3, max_tokens: 1000, ...(/gpt-oss/.test(MODEL) ? { reasoning_effort: 'low' } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: SYSTEM }, ...history],
     }),
