@@ -1,0 +1,3 @@
+# Netlify redirects: the client portal lives on its own address.
+/portal     https://portal.raledgersolutions.com   301!
+/portal/*   https://portal.raledgersolutions.com   301!
