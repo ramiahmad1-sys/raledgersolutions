@@ -511,7 +511,7 @@
      ========================================================= */
   function stampPrintDate() {
     var when = new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-    $("print-meta").textContent = "RA Ledger Solutions, a DBA of Alquds Accounting Services LLC · 718-285-6959 · raledgersolutions.com/tools · " + when;
+    $("print-meta").textContent = "RA Ledger Solutions, a DBA of Alquds Accounting & Tax Services LLC · 718-285-6959 · raledgersolutions.com/tools · " + when;
   }
   function printSection(cls) {
     document.body.classList.remove("print-checkup", "print-runway");

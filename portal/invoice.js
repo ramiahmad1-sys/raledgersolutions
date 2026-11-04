@@ -1,7 +1,7 @@
 /* Printable invoice. Same login cookie as the portal; the server decides who may see which invoice. */
 'use strict';
 const FIRM = {
-  name: 'RA Ledger Solutions', legal: 'Alquds Accounting Services LLC',
+  name: 'RA Ledger Solutions', legal: 'Alquds Accounting & Tax Services LLC',
   lines: ['Staten Island, NY 10309', '(718) 285-6959', 'info@raledgersolutions.com', 'raledgersolutions.com']
 };
 const doc = document.getElementById('doc');
