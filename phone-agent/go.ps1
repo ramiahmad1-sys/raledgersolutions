@@ -21,14 +21,17 @@ Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 Start-Sleep 1
 
 Step "Groq key"
-$sec = Read-Host "Paste your Groq key (hidden), or just press Enter to skip" -AsSecureString
-$key = [System.Net.NetworkCredential]::new('', $sec).Password
-if ($key) {
-  $key = $key.Trim()
-  if (-not $key.StartsWith('gsk_') -or $key.Length -lt 30) { Write-Host "Warning: that does not look like a Groq key (should start with gsk_ and be long). The paste may not have worked - use Ctrl+V or right-click." -ForegroundColor Yellow }
-  $env:GROQ_API_KEY = $key; Write-Host "Key set ($($key.Length) characters)."
-}
-else { Write-Host "No key: callers will only hear 'please email us'." -ForegroundColor Yellow }
+Write-Host "1) Copy your Groq key (Ctrl+C on the key at console.groq.com/keys)."
+Write-Host "2) Come back here and press Enter. Type skip + Enter to run without a key."
+$ans = Read-Host "Ready"
+$key = $null
+if ($ans -ne 'skip') {
+  $key = ((Get-Clipboard) -join '').Trim()
+  if (-not $key.StartsWith('gsk_') -or $key.Length -lt 30) { Fail "The clipboard does not hold a Groq key (it should start with gsk_). Copy the key and run the script again." }
+  $env:GROQ_API_KEY = $key
+  Set-Clipboard ' '
+  Write-Host "Key set ($($key.Length) characters). Clipboard cleared."
+} else { Write-Host "No key: callers will only hear 'please email us'." -ForegroundColor Yellow }
 
 Step "Starting server (new window - leave it open)"
 Start-Process node -ArgumentList 'server.js' -WorkingDirectory $dir
