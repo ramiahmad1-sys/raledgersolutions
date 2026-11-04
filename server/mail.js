@@ -10,6 +10,7 @@ const cfg = () => ({
   user: process.env.SMTP_USER, pass: process.env.SMTP_PASS, from: process.env.MAIL_FROM,
   insecure: process.env.SMTP_INSECURE === '1',                    // local testing only
   delay: Number(process.env.NOTIFY_DELAY_MS ?? 90000),            // batch window
+  retry: Number(process.env.NOTIFY_RETRY_MS ?? 2000),             // backoff between send attempts
   url: (process.env.PORTAL_URL || 'http://localhost:' + (process.env.PORT || 3000)).replace(/\/$/, '') + '/portal/'
 });
 const enabled = () => { const c = cfg(); return !!(c.host && c.from); };
@@ -72,6 +73,28 @@ function smtpSend({ to, subject, text }) {
   });
 }
 
+/* A notification is only worth sending if it arrives. A single failed send used to lose it
+   for good, so a temporary failure is retried. An SMTP 5xx (bad credentials, rejected
+   recipient) is permanent: retrying it only delays the warning in the log. */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const permanent = e => /^SMTP 5\d\d/.test(e.message);
+
+async function sendWithRetry(msg, attempts = 3) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await smtpSend(msg);
+      if (i > 1) console.log(`Email notification delivered on attempt ${i}`);
+      return true;
+    } catch (e) {
+      console.error(`Email notification attempt ${i}/${attempts} failed: ${e.message}`);
+      if (permanent(e)) break;
+      if (i < attempts) await sleep(cfg().retry * i);
+    }
+  }
+  console.error('Email notification NOT DELIVERED:', msg.subject, '->', [].concat(msg.to).join(', '));
+  return false;
+}
+
 /* ---- batching: one email per (recipient group, client, kind) per window ---- */
 const pending = new Map();
 function queue({ audience, clientId, kind }) {
@@ -102,9 +125,9 @@ async function flush({ audience, clientId, kind, n }) {
     : kind === 'invoice' ? (n === 1 ? 'a new invoice' : n + ' new invoices') : (n === 1 ? 'a new document' : n + ' new documents');
   const c = cfg(), name = clean(client.name);
   if (audience === 'staff') {
-    await smtpSend({ to, subject: `${name}: ${noun}`, text: `${name} sent ${noun} in the client portal.\n\nSign in to view it: ${c.url}\n` });
+    await sendWithRetry({ to, subject: `${name}: ${noun}`, text: `${name} sent ${noun} in the client portal.\n\nSign in to view it: ${c.url}\n` });
   } else {
-    await smtpSend({ to, subject: `RA Ledger Solutions: ${noun} for you`, text: `Hello ${name},\n\nYour accountant sent ${noun} in your client portal.\n\nSign in to view it: ${c.url}\n\nFor your security, this email does not include the contents. Please do not reply with sensitive information.\n` });
+    await sendWithRetry({ to, subject: `RA Ledger Solutions: ${noun} for you`, text: `Hello ${name},\n\nYour accountant sent ${noun} in your client portal.\n\nSign in to view it: ${c.url}\n\nFor your security, this email does not include the contents. Please do not reply with sensitive information.\n` });
   }
 }
 
