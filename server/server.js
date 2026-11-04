@@ -297,7 +297,10 @@ async function api(req, res, url) {
 }
 const me = u => {
   const c = u.client_id ? db.prepare('SELECT name,notify FROM clients WHERE id=?').get(u.client_id) : null;
-  return { role: u.role, email: u.email, clientId: u.client_id || null, name: c?.name ?? null, notify: c ? !!c.notify : null };
+  const info = { role: u.role, email: u.email, clientId: u.client_id || null, name: c?.name ?? null, notify: c ? !!c.notify : null };
+  // Staff are shown whether email can be sent at all, so "notifications off" is never silent.
+  if (u.role === 'staff') info.mail = mailEnabled();
+  return info;
 };
 
 /* ---------- static site ---------- */
@@ -331,5 +334,8 @@ const server = http.createServer(async (req, res) => {
     console.error(e); send(res, 500, { error: 'Server error' });
   }
 });
-if (require.main === module) server.listen(PORT, process.env.HOST || undefined, () => console.log(`RA Ledger Solutions on http://localhost:${PORT} (email notifications ${mailEnabled() ? 'on' : 'off'})`));
+if (require.main === module) server.listen(PORT, process.env.HOST || undefined, () => {
+  console.log(`RA Ledger Solutions on http://localhost:${PORT} (email notifications ${mailEnabled() ? 'on' : 'off'})`);
+  if (!mailEnabled()) console.warn('WARNING: email notifications are OFF because SMTP_HOST and/or MAIL_FROM are not set. Nobody is emailed about new documents, messages or invoices.');
+});
 module.exports = server;
