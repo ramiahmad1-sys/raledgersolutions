@@ -2,7 +2,7 @@
 'use strict';
 const FIRM = {
   name: 'RA Ledger Solutions', legal: 'Alquds Accounting Services LLC',
-  lines: ['Staten Island, NY 10309', '(646) 480-1247', 'certifiedacct10@gmail.com', 'raledgersolutions.com']
+  lines: ['Staten Island, NY 10309', '(718) 285-6959', 'certifiedacct10@gmail.com', 'raledgersolutions.com']
 };
 const doc = document.getElementById('doc');
 document.getElementById('print').addEventListener('click', () => window.print());
