@@ -85,7 +85,9 @@ function loginView() {
     state.me = await api('POST', '/api/login', { email: email.value, password: pw.value }); route();
   }) }, h('label', {}, 'Email', email), h('label', {}, 'Password', pw), h('button', { class: 'btn' }, 'Sign in'));
   $app.append(h('div', { class: 'login' },
-    h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form),
+    h('div', { class: 'card' }, h('h1', {}, 'Sign in'), h('p', { class: 'muted' }, 'Clients: upload documents, download your monthly reports, and message your accountant. Need access? Ask your accountant to set up your account.'), form,
+      h('p', { class: 'muted' }, 'For authorized RA Ledger Solutions clients and staff only. Use is subject to your engagement letter and our ',
+        h('a', { href: 'https://raledgersolutions.com/privacy' }, 'Privacy & Terms'), '.')),
     installHint()));
 }
 function emailPref(enabled, save) {
@@ -179,7 +181,7 @@ async function clientView(tab = 'Overview') {
   } else if (tab === 'Reports') {
     body = h('div', { class: 'card' }, h('h2', {}, 'Monthly reports'), filesTable(reports, { onChange: again }));
   } else if (tab === 'Documents') {
-    body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Send documents'), h('p', { class: 'muted' }, 'Bank and card statements, receipts, invoices, payroll records. Up to 15 MB per file.'),
+    body = h('div', {}, h('div', { class: 'card' }, h('h2', {}, 'Send documents'), h('p', { class: 'muted' }, 'Bank and card statements, receipts, invoices. Up to 15 MB per file.'),
       uploadForm({ withPeriod: true, label: 'Choose files', onSubmit: async (fl, p, n) => { await uploadFiles(fl, { period: p, note: n }); toast('Uploaded.'); again(); } })),
       h('div', { class: 'card' }, h('h2', {}, 'Your uploads'), filesTable(docs, { canDelete: true, onChange: again })));
   } else if (tab === 'Requests') {
