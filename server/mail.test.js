@@ -5,8 +5,12 @@ const net = require('node:net'), os = require('node:os'), fs = require('node:fs'
 
 // tiny fake SMTP server that records each delivered message
 const inbox = [];
+let failNext = 0;        // make this many connections answer MAIL FROM with a temporary 4xx
+let permanentFail = false;   // or answer with a permanent 5xx that must not be retried
+let connections = 0;
 const smtp = net.createServer(sock => {
   let data = false, cur = { rcpt: [], body: '' }, buf = '';
+  connections++;
   sock.write('220 fake\r\n');
   sock.on('data', d => {
     buf += d.toString();
@@ -16,7 +20,11 @@ const smtp = net.createServer(sock => {
       if (data) { if (line === '.') { data = false; inbox.push(cur); cur = { rcpt: [], body: '' }; sock.write('250 queued\r\n'); } else cur.body += line + '\n'; continue; }
       if (/^EHLO/.test(line)) sock.write('250-fake\r\n250 AUTH PLAIN\r\n');
       else if (/^AUTH PLAIN/.test(line)) { cur.auth = Buffer.from(line.slice(11), 'base64').toString(); sock.write('235 ok\r\n'); }
-      else if (/^MAIL FROM/.test(line)) sock.write('250 ok\r\n');
+      else if (/^MAIL FROM/.test(line)) {
+        if (permanentFail) sock.write('550 mailbox unavailable\r\n');
+        else if (failNext > 0) { failNext--; sock.write('451 temporary failure, try again\r\n'); }
+        else sock.write('250 ok\r\n');
+      }
       else if (/^RCPT TO:<(.+)>/.test(line)) { cur.rcpt.push(line.match(/<(.+)>/)[1]); sock.write('250 ok\r\n'); }
       else if (line === 'DATA') { data = true; sock.write('354 go\r\n'); }
       else if (line === 'QUIT') { sock.write('221 bye\r\n'); sock.end(); }
@@ -28,7 +36,7 @@ let server, base;
 test.before(async () => {
   await new Promise(r => smtp.listen(0, '127.0.0.1', r));
   Object.assign(process.env, { DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'ra-mail-')), SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.address().port),
-    SMTP_INSECURE: '1', SMTP_USER: 'u', SMTP_PASS: 'p', MAIL_FROM: 'RA Ledger <no-reply@ra.test>', NOTIFY_DELAY_MS: '100', PORTAL_URL: 'https://example.test' });
+    SMTP_INSECURE: '1', SMTP_USER: 'u', SMTP_PASS: 'p', MAIL_FROM: 'RA Ledger <no-reply@ra.test>', NOTIFY_DELAY_MS: '100', NOTIFY_RETRY_MS: '40', PORTAL_URL: 'https://example.test' });
   const { createUser } = require('./db');
   createUser({ email: 'staff@ra.test', password: 'staff-password-1', role: 'staff' });
   server = require('./server');
@@ -72,6 +80,32 @@ test('uploads and messages email the other side, batched, with no content leaked
   await wait(600);
   assert.equal(inbox.length, 2);
   assert.ok(inbox.every(m => m.rcpt.join() === 'a@acme.test'));
+});
+
+test('a temporary mail failure is retried, not lost', async () => {
+  const staff = await login('staff@ra.test', 'staff-password-1');
+  const id = (await call('POST', '/api/clients', { cookie: staff, json: { name: 'Retry Co', email: 'r@retry.test', password: 'retry-password-1' } })).data.id;
+  const cl = await login('r@retry.test', 'retry-password-1');
+
+  inbox.length = 0; failNext = 2;                       // first two attempts get SMTP 451
+  await call('POST', '/api/messages', { cookie: cl, json: { clientId: id, text: 'hello' } });
+  await wait(900);
+  assert.equal(failNext, 0, 'both failures were actually served');
+  assert.equal(inbox.length, 1, 'the notification still arrived on the third attempt');
+  assert.equal(inbox[0].rcpt.join(), 'staff@ra.test');
+});
+
+test('a permanent 5xx refusal is not retried', async () => {
+  const staff = await login('staff@ra.test', 'staff-password-1');
+  const id = (await call('POST', '/api/clients', { cookie: staff, json: { name: 'Perm Co', email: 'p@perm.test', password: 'perm-password-1' } })).data.id;
+  const cl = await login('p@perm.test', 'perm-password-1');
+
+  inbox.length = 0; permanentFail = true; connections = 0;
+  await call('POST', '/api/messages', { cookie: cl, json: { clientId: id, text: 'hello' } });
+  await wait(900);
+  permanentFail = false;
+  assert.equal(inbox.length, 0);
+  assert.equal(connections, 1, 'gave up after one attempt instead of retrying a permanent refusal');
 });
 
 test('a mail failure never breaks the request', async () => {

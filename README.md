@@ -55,6 +55,9 @@ When on:
 - Bursts are batched: 10 uploads in a minute is one email ("10 new documents"). Window: `NOTIFY_DELAY_MS` (default 90000).
 - Emails never contain file names or message text, only who, what kind, how many, and a sign-in link.
 - Mail failures are logged and never block uploads or messages. Pending (unsent) notifications are lost if the server restarts.
+- A send that fails for a temporary reason is retried 3 times (`NOTIFY_RETRY_MS`, default 2000ms backoff).
+  A permanent SMTP 5xx (bad credentials, rejected recipient) is not retried; it is logged as
+  `Email notification NOT DELIVERED` with the subject and recipients, so it can still be followed up by hand.
 
 | Variable | Purpose |
 |---|---|
@@ -63,9 +66,30 @@ When on:
 | `SMTP_USER`, `SMTP_PASS` | Login (Gmail/Google Workspace: use an app password) |
 | `MAIL_FROM` | e.g. `RA Ledger Solutions <no-reply@raledgersolutions.com>` |
 | `NOTIFY_STAFF_EMAIL` | Comma-separated staff recipients (default: every staff user's login email) |
+| `NOTIFY_RETRY_MS` | Backoff between send attempts (default 2000) |
 | `PORTAL_URL` | Public portal URL for the link in emails, e.g. `https://portal.raledgersolutions.com` |
 
 The server refuses to send credentials or mail without TLS.
+
+### Settings that are known to work
+
+**Resend** (same account the phone agent uses, so one API key covers both):
+
+```
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend                      # the literal word, not an email address
+SMTP_PASS=re_...                      # a Resend API key
+MAIL_FROM=RA Ledger Solutions <no-reply@raledgersolutions.com>
+```
+
+The portal emails clients, so the `MAIL_FROM` domain must be verified in Resend first.
+An unverified account can only send from `onboarding@resend.dev`, and only to the account owner's
+own address — enough to test, not enough for clients.
+
+**Gmail / Google Workspace:** `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER` your full
+address, and `SMTP_PASS` an [app password](https://support.google.com/accounts/answer/185833)
+(a normal account password is rejected, and an app password requires 2-step verification).
 
 ## Deploying (Google Cloud free server)
 
