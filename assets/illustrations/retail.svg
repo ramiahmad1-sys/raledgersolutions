@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  <circle cx="240" cy="168" r="142" fill="#f6f8fa"/>
+  <path d="M60 270 H420" stroke="#e3e8ec" stroke-width="4" stroke-linecap="round"/>
+  <rect x="132" y="112" width="196" height="158" rx="6" fill="#12314f"/>
+  <rect x="152" y="66" width="156" height="30" rx="6" fill="#0b2038"/>
+  <rect x="176" y="77" width="108" height="8" rx="4" fill="#c9973f"/>
+  <g>
+    <path d="M122 96 H338 V120 H122 Z" fill="#c9973f"/>
+    <path d="M122 96 H149 V120 H122 Z M176 96 H203 V120 H176 Z M230 96 H257 V120 H230 Z M284 96 H311 V120 H284 Z" fill="#ffffff"/>
+    <path d="M122 120 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0 a13.5 9 0 0 0 27 0" fill="#a97c2f"/>
+  </g>
+  <rect x="150" y="150" width="56" height="64" rx="4" fill="#1e4a73"/>
+  <rect x="254" y="150" width="56" height="64" rx="4" fill="#1e4a73"/>
+  <path d="M158 204 h14 v-18 h-14 Z M176 204 h12 v-30 h-12 Z M192 204 h10 v-40 h-10 Z" fill="#c9973f" opacity="0.9"/>
+  <rect x="214" y="176" width="32" height="94" rx="3" fill="#f6f8fa"/>
+  <circle cx="239" cy="226" r="3" fill="#12314f"/>
+  <g transform="translate(352 140) rotate(6)">
+    <path d="M0 0 H70 V96 l-8.75 -7 l-8.75 7 l-8.75 -7 l-8.75 7 l-8.75 -7 l-8.75 7 l-8.75 -7 L0 96 Z" fill="#ffffff" stroke="#e3e8ec" stroke-width="2"/>
+    <rect x="12" y="14" width="46" height="6" rx="3" fill="#12314f"/>
+    <rect x="12" y="30" width="34" height="4" rx="2" fill="#8a97a3"/>
+    <rect x="12" y="42" width="40" height="4" rx="2" fill="#8a97a3"/>
+    <rect x="12" y="54" width="30" height="4" rx="2" fill="#8a97a3"/>
+    <rect x="12" y="70" width="46" height="7" rx="3" fill="#c9973f"/>
+  </g>
+  <g fill="#c9973f">
+    <ellipse cx="96" cy="262" rx="20" ry="7"/><ellipse cx="96" cy="254" rx="20" ry="7" fill="#a97c2f"/><ellipse cx="96" cy="246" rx="20" ry="7"/>
+  </g>
+</svg>

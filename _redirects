@@ -1,3 +1,20 @@
-# Netlify redirects: the client portal lives on its own address.
-/portal     https://portal.raledgersolutions.com   301!
-/portal/*   https://portal.raledgersolutions.com   301!
+/about                     /                              301
+/about.html                /                              301
+/faq                       /services                      301
+/faq.html                  /services                      301
+/medical-dental            /industries/medical-dental     301
+/medical-dental.html       /industries/medical-dental     301
+/nonprofit                 /industries/nonprofit          301
+/nonprofit.html            /industries/nonprofit          301
+/retail                    /industries/retail             301
+/retail.html               /industries/retail             301
+/property-management       /industries/property-management 301
+/property-management.html  /industries/property-management 301
+/real-estate               /industries/real-estate        301
+/real-estate.html          /industries/real-estate        301
+/industries                /services                      301
+/industries/               /services                      301
+
+# Client portal runs on its own server (portal.raledgersolutions.com)
+/portal                    https://portal.raledgersolutions.com   301!
+/portal/*                  https://portal.raledgersolutions.com   301!
