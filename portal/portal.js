@@ -214,9 +214,18 @@ async function staffView(view = {}) {
     toast('Client added. Send them the login details securely and ask them to change the password.'); re({});
   }) }, h('div', { class: 'row' }, h('label', {}, 'Company name', name), h('label', {}, 'Contact', contact)),
     h('div', { class: 'row' }, h('label', {}, 'Client login email', email), h('label', {}, 'Temporary password', pw)), h('div', {}, h('button', { class: 'btn' }, 'Add client')));
-  render(sectionNav('clients', re), h('h1', {}, 'Clients'),
+  render(sectionNav('clients', re), h('h1', {}, 'Clients'), mailOffNotice(),
     h('div', { class: 'card' }, clients.length ? h('table', {}, h('thead', {}, h('tr', {}, ['Client', 'Uploads', 'Requests', 'Last message', ''].map(t => h('th', {}, t)))), h('tbody', {}, rows)) : h('p', { class: 'empty' }, 'No clients yet. Add your first one below.')),
     h('div', { class: 'card' }, h('h2', {}, 'Add a client'), addForm));
+}
+
+/* Email notifications are dropped silently when SMTP is unset, so staff are told on screen. */
+function mailOffNotice() {
+  if (state.me?.role !== 'staff' || state.me.mail !== false) return null;
+  return h('div', { class: 'notice' },
+    h('strong', {}, 'Email notifications are off.'),
+    ' Nobody is emailed when a client uploads a document or sends a message, and clients are not emailed about reports or invoices. ',
+    'To turn them on, set SMTP_HOST and MAIL_FROM (plus SMTP_USER and SMTP_PASS if your mail server needs them) in the server environment, then restart.');
 }
 
 function sectionNav(active, re) {

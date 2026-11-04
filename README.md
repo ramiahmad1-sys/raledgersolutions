@@ -44,7 +44,10 @@ Files: `portal/manifest.webmanifest`, `portal/icons/`.
 
 ## Email notifications
 
-Off until `SMTP_HOST` and `MAIL_FROM` are set. When on:
+Off until `SMTP_HOST` and `MAIL_FROM` are set. While off, notifications are dropped silently, so the
+server logs a warning at startup and staff see **"Email notifications are off"** on the Clients screen.
+
+When on:
 - Client uploads a document or sends a message -> email to staff.
 - Staff publishes a report/document or replies -> email to that client.
 - Clients can opt out under **Account** (staff can also change it on the client's Account tab; the client list shows "Email off").
