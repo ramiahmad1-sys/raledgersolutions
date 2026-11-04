@@ -19,9 +19,9 @@ const esc = s => String(s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;',
 
 function twiml(say, { end = false } = {}) {
   const gather = `<Gather input="speech" action="/respond" method="POST" speechTimeout="auto" language="en-US" actionOnEmptyResult="true">`
-    + `<Say voice="Polly.Joanna">${esc(say)}</Say></Gather>`;
+    + `<Say voice="Polly.Joanna-Generative">${esc(say)}</Say></Gather>`;
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${
-    end ? `<Say voice="Polly.Joanna">${esc(say)}</Say><Hangup/>` : gather
+    end ? `<Say voice="Polly.Joanna-Generative">${esc(say)}</Say><Hangup/>` : gather
   }</Response>`;
 }
 
