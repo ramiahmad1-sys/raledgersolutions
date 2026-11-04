@@ -13,7 +13,39 @@
         <priority>0.8</priority>
     </url>
     <url>
+        <loc>https://raledgersolutions.com/tools</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
         <loc>https://raledgersolutions.com/privacy</loc>
         <priority>0.5</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/industries/medical-dental</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/industries/nonprofit</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/industries/property-management</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/industries/real-estate</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/industries/retail</loc>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/bookkeeping-staten-island</loc>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://raledgersolutions.com/quickbooks-cleanup-nyc</loc>
+        <priority>0.8</priority>
     </url>
 </urlset>
