@@ -70,6 +70,15 @@ const server = http.createServer((req, res) => {
   req.on('end', async () => {
     const p = Object.fromEntries(new URLSearchParams(body));
     const send = xml => { res.writeHead(200, { 'Content-Type': 'text/xml' }); res.end(xml); };
+    if (req.method === 'GET' && req.url === '/check') {
+      let groq = 'missing (add GROQ_API_KEY in Render > Environment)';
+      if (GROQ_KEY) {
+        try { const r = await think([{ role: 'user', content: 'What services do you offer?' }]); groq = 'working - sample reply: ' + r.reply; }
+        catch (e) { groq = 'set but failing: ' + String(e.message).slice(0, 200); }
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      return res.end(`Server: running\nGroq key: ${groq}\nPush notifications (NTFY_TOPIC): ${NTFY_TOPIC ? 'on' : 'off'}\nTwilio webhook: <this address>/voice (HTTP POST)`);
+    }
     if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('RA Ledger phone agent is running'); }
     if (!validSignature(req, p)) { res.writeHead(403); return res.end('Forbidden'); }
 
