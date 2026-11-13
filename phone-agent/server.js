@@ -9,6 +9,8 @@ const SYSTEM = require('./knowledge');
 const PORT = process.env.PORT || 3000;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+// Voice the caller hears. Any Twilio <Say> voice name works; change it in Render with the VOICE variable (no code change).
+const VOICE = process.env.VOICE || 'Polly.Matthew-Generative';
 const NTFY_TOPIC = process.env.NTFY_TOPIC; // optional free push notifications via ntfy.sh
 // Alert channels. A caller's message is only worth taking if it reaches you, so several are
 // supported and every send is retried and logged. Configure at least one.
@@ -33,9 +35,9 @@ const esc = s => String(s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;',
 
 function twiml(say, { end = false } = {}) {
   const gather = `<Gather input="speech" action="/respond" method="POST" speechTimeout="auto" language="en-US" actionOnEmptyResult="true">`
-    + `<Say voice="Polly.Joanna-Generative">${esc(say)}</Say></Gather>`;
+    + `<Say voice="${esc(VOICE)}">${esc(say)}</Say></Gather>`;
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${
-    end ? `<Say voice="Polly.Joanna-Generative">${esc(say)}</Say><Hangup/>` : gather
+    end ? `<Say voice="${esc(VOICE)}">${esc(say)}</Say><Hangup/>` : gather
   }</Response>`;
 }
 
