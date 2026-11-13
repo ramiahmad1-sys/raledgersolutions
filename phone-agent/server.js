@@ -43,7 +43,7 @@ function twiml(say, { end = false } = {}) {
 
 async function think(history) {
   if (!GROQ_KEY) { // no key: still take a message instead of failing
-    return { reply: "Thanks for calling RA Ledger Solutions. Please leave your name, number and reason for calling after the tone, or email certifiedacct10@gmail.com. Goodbye.", end: true, message: null };
+    return { reply: "Thanks for calling RA Ledger Solutions. Please leave your name, number and reason for calling after the tone, or email info@raledgersolutions.com. Goodbye.", end: true, message: null };
   }
   const res = await fetch(process.env.GROQ_URL || 'https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -262,7 +262,7 @@ const server = http.createServer((req, res) => {
       res.writeHead(404); res.end();
     } catch (e) {
       console.error(e);
-      send(twiml("I'm sorry, I'm having trouble right now. Please call back or email certifiedacct10@gmail.com. Goodbye.", { end: true }));
+      send(twiml("I'm sorry, I'm having trouble right now. Please call back or email info@raledgersolutions.com. Goodbye.", { end: true }));
     }
   });
 });
