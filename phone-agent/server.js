@@ -23,6 +23,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const TWILIO_API_URL = process.env.TWILIO_API_URL || 'https://api.twilio.com';
 const RESEND_API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
 const NTFY_URL = process.env.NTFY_URL || 'https://ntfy.sh';
+const NTFY_TOKEN = process.env.NTFY_TOKEN; // optional: ntfy account access token, so sends use your own quota instead of the shared anonymous one
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN; // optional: validates requests really come from Twilio
 const PUBLIC_URL = process.env.PUBLIC_URL; // required with TWILIO_AUTH_TOKEN, e.g. https://abc.ngrok-free.app
 const MESSAGES = path.join(__dirname, 'messages.jsonl');
@@ -103,7 +104,9 @@ function emailAlert(subject, text) {
 function ntfyAlert(text) {
   if (!NTFY_TOPIC) return null;
   return deliver('ntfy alert', `${NTFY_URL}/${encodeURIComponent(NTFY_TOPIC)}`, {
-    method: 'POST', headers: { Title: 'New call message' }, body: text,
+    method: 'POST',
+    headers: { Title: 'New call message', ...(NTFY_TOKEN ? { Authorization: `Bearer ${NTFY_TOKEN}` } : {}) },
+    body: text,
   });
 }
 
@@ -143,10 +146,83 @@ function validSignature(req, params) {
   return given.length === sig.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(sig));
 }
 
+// ---- Website chat (raledgersolutions.com widget) ----
+// Shares the Groq key and knowledge with the phone agent, but is public, so it is rate limited,
+// length capped, and only answers from the browser origins listed here.
+const CHAT_ORIGINS = (process.env.CHAT_ORIGINS || 'https://raledgersolutions.com,https://www.raledgersolutions.com').split(',');
+const CHAT_LIMIT = Number(process.env.CHAT_LIMIT_PER_10MIN || 10);
+const chatHits = new Map(); // ip -> [timestamps]
+
+function chatCors(req, res) {
+  const origin = req.headers.origin || '';
+  if (CHAT_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+}
+
+function chatAllowed(ip) {
+  const now = Date.now();
+  const recent = (chatHits.get(ip) || []).filter(t => now - t < 10 * 60 * 1000);
+  if (recent.length >= CHAT_LIMIT) { chatHits.set(ip, recent); return false; }
+  recent.push(now);
+  chatHits.set(ip, recent);
+  return true;
+}
+
+const WEB_NOTE = '\n\nTHIS IS THE WEBSITE CHAT, NOT A PHONE CALL. Answer in at most 4 short sentences. '
+  + 'Do not ask for the caller\'s name, phone number or reason. For scheduling or pricing, point them to the free 20-minute consultation: '
+  + 'call 718-285-6959 or use the contact page at raledgersolutions.com/contact. Never give tax or legal advice.';
+
+async function chatWeb(messages) {
+  if (!GROQ_KEY) return "Our chat is being set up. Please call 718-285-6959 or visit raledgersolutions.com/contact.";
+  const res = await fetch(process.env.GROQ_URL || 'https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+    body: JSON.stringify({
+      model: MODEL, temperature: 0.3, max_tokens: 400, ...(/gpt-oss/.test(MODEL) ? { reasoning_effort: 'low' } : {}),
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: SYSTEM + WEB_NOTE }, ...messages],
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}`);
+  const data = await res.json();
+  const out = JSON.parse(data.choices[0].message.content);
+  return String(out.reply || '').slice(0, 1000);
+}
+
+async function handleChat(req, res, body) {
+  chatCors(req, res);
+  if (req.method === 'OPTIONS') { res.writeHead(CHAT_ORIGINS.includes(req.headers.origin || '') ? 204 : 403); return res.end(); }
+  if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true}'); }
+  if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
+  if (!CHAT_ORIGINS.includes(req.headers.origin || '')) { res.writeHead(403); return res.end('{"error":"origin not allowed"}'); }
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!chatAllowed(ip)) { res.writeHead(429, { 'Content-Type': 'application/json' }); return res.end('{"reply":"You have sent many messages in a short time. Please call 718-285-6959 or try again in a few minutes."}'); }
+  try {
+    const parsed = JSON.parse(body || '{}');
+    const msgs = (Array.isArray(parsed.messages) ? parsed.messages : []).slice(-10)
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: m.content.slice(0, 500) }));
+    if (!msgs.length || msgs[msgs.length - 1].role !== 'user') { res.writeHead(400); return res.end('{"error":"no question"}'); }
+    const reply = await chatWeb(msgs);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ reply }));
+  } catch (e) {
+    console.error('chat error:', why(e));
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    return res.end('{"error":"unavailable"}');
+  }
+}
+
 const server = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
   req.on('end', async () => {
+    if (req.url === '/chat') return handleChat(req, res, body);
     const p = Object.fromEntries(new URLSearchParams(body));
     const send = xml => { res.writeHead(200, { 'Content-Type': 'text/xml' }); res.end(xml); };
     if (req.method === 'GET' && req.url === '/check') {
