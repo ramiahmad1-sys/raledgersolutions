@@ -45,6 +45,8 @@ function renderUserbar() {
   if (installEvent && !isStandalone()) bar.append(h('button', { class: 'linkbtn', onclick: act(async () => { installEvent.prompt(); await installEvent.userChoice; installEvent = null; renderUserbar(); }) }, 'Install app'));
   if (!state.me) return;
   bar.append(h('span', {}, state.me.role === 'staff' ? 'Staff · ' + state.me.email : state.me.name),
+    // Staff-only shortcut to the owner's private invoice desk (opens outside the portal; needs his own Claude sign-in).
+    state.me.role === 'staff' ? h('a', { class: 'linkbtn', href: 'https://claude.ai/artifact/MQAQVJZ9hjbTrGpfvGWSQX', target: '_blank', rel: 'noopener noreferrer' }, 'RA Ledger Desk') : null,
     h('button', { class: 'linkbtn', onclick: () => accountView() }, 'Account'),
     h('button', { class: 'linkbtn', onclick: act(async () => { await api('POST', '/api/logout'); state.me = null; route(); }) }, 'Sign out'));
 }
