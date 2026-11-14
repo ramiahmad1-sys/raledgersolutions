@@ -244,7 +244,7 @@ const server = http.createServer((req, res) => {
     try {
       if (req.url === '/voice') {
         calls.set(sid, []);
-        return send(twiml('Thank you for calling RA Ledger Solutions. I\'m the virtual assistant. How can I help you today?'));
+        return send(twiml('Hi, thanks for calling RA Ledger Solutions! This is Alex, the virtual assistant. How can I help you today?'));
       }
       if (req.url === '/respond') {
         const heard = (p.SpeechResult || '').trim();
