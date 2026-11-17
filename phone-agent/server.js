@@ -33,12 +33,40 @@ const calls = new Map(); // CallSid -> chat history (in memory; fine for a small
 
 const esc = s => String(s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 
-function twiml(say, { end = false } = {}) {
-  const gather = `<Gather input="speech" action="/respond" method="POST" speechTimeout="auto" language="en-US" actionOnEmptyResult="true">`
-    + `<Say voice="${esc(VOICE)}">${esc(say)}</Say></Gather>`;
-  return `<?xml version="1.0" encoding="UTF-8"?><Response>${
-    end ? `<Say voice="${esc(VOICE)}">${esc(say)}</Say><Hangup/>` : gather
-  }</Response>`;
+// ---- ElevenLabs voice (optional) ----
+// With ELEVENLABS_API_KEY set, each line is spoken by an ElevenLabs voice and played to the caller.
+// If the key is missing, or ElevenLabs is slow or fails, the call falls back to the built-in VOICE, so callers always hear something.
+const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVEN_VOICE = process.env.ELEVENLABS_VOICE_ID || 'iP95p4xoKVk53GoZ742B';
+const ELEVEN_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+const ELEVEN_URL = process.env.ELEVENLABS_API_URL || 'https://api.elevenlabs.io';
+const audio = new Map(); // id -> mp3 Buffer, kept briefly so Twilio can fetch it
+
+async function elevenAudio(text) {
+  if (!ELEVEN_KEY) return null;
+  const id = crypto.createHash('sha1').update(ELEVEN_VOICE + '|' + ELEVEN_MODEL + '|' + text).digest('hex').slice(0, 24);
+  if (audio.has(id)) return id;                              // same sentence (e.g. the greeting) is reused
+  try {
+    const res = await fetch(`${ELEVEN_URL}/v1/text-to-speech/${encodeURIComponent(ELEVEN_VOICE)}?output_format=mp3_44100_64`, {
+      method: 'POST',
+      headers: { 'xi-api-key': ELEVEN_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: ELEVEN_MODEL }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) { console.error(`ElevenLabs: HTTP ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`); return null; }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 200) { console.error('ElevenLabs: empty audio'); return null; }
+    audio.set(id, buf);
+    if (audio.size > 200) audio.delete(audio.keys().next().value); // keep memory small
+    return id;
+  } catch (e) { console.error('ElevenLabs:', why(e)); return null; }
+}
+
+async function twiml(say, { end = false } = {}) {
+  const id = await elevenAudio(say);
+  const speech = id ? `<Play>/tts/${id}.mp3</Play>` : `<Say voice="${esc(VOICE)}">${esc(say)}</Say>`;
+  const gather = `<Gather input="speech" action="/respond" method="POST" speechTimeout="auto" language="en-US" actionOnEmptyResult="true">${speech}</Gather>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>${end ? speech + '<Hangup/>' : gather}</Response>`;
 }
 
 async function think(history) {
@@ -220,11 +248,44 @@ async function handleChat(req, res, body) {
   }
 }
 
+// ---- Website contact form (raledgersolutions.com/contact) ----
+// Receives the form, emails it to the owner via Resend, and sends the visitor to the thank-you page.
+// No-JS fallback works too: a plain form POST gets a 303 redirect back to the website.
+const SITE_URL = process.env.SITE_URL || 'https://raledgersolutions.com';
+
+async function handleContactForm(req, res, body) {
+  chatCors(req, res);
+  if (req.method === 'OPTIONS') { res.writeHead(CHAT_ORIGINS.includes(req.headers.origin || '') ? 204 : 403); return res.end(); }
+  if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
+  const wantsJson = /application\/json/.test(req.headers.accept || '');
+  const finish = (ok) => {
+    if (wantsJson) { res.writeHead(ok ? 200 : 502, { 'Content-Type': 'application/json' }); return res.end(ok ? '{"ok":true}' : '{"error":"send failed"}'); }
+    res.writeHead(303, { Location: SITE_URL + (ok ? '/thank-you' : '/contact?error=1') });
+    return res.end();
+  };
+  const f = Object.fromEntries(new URLSearchParams(body));
+  if (f._gotcha) return finish(true);                       // bot filled the hidden field: pretend success
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!chatAllowed(ip)) return finish(false);
+  const name = String(f.Name || '').slice(0, 200).trim();
+  const email = String(f.Email || '').slice(0, 200).trim();
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return finish(false);
+  if (!(ALERT_EMAIL_TO && RESEND_API_KEY)) { console.error('contact form: Resend not configured'); return finish(false); }
+  const text = `New website inquiry\n\nName: ${name}\nBusiness: ${String(f['Business name'] || '').slice(0, 200)}\nEmail: ${email}\nPhone: ${String(f.Phone || '').slice(0, 50)}\nNeeds help with: ${String(f['What do you need help with'] || '').slice(0, 100)}\n\nMessage:\n${String(f.Message || '').slice(0, 4000)}\n\n(Sent from the raledgersolutions.com contact form. Reply goes to the visitor.)`;
+  const ok = await deliver('Contact form email', RESEND_API_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: ALERT_EMAIL_FROM, to: [ALERT_EMAIL_TO], reply_to: email, subject: `Website inquiry from ${name}`, text }),
+  });
+  return finish(ok);
+}
+
 const server = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
   req.on('end', async () => {
     if (req.url === '/chat') return handleChat(req, res, body);
+    if (req.url === '/contact-form') return handleContactForm(req, res, body).catch(e => { console.error('contact form error:', why(e)); res.writeHead(500); res.end(); });
     const p = Object.fromEntries(new URLSearchParams(body));
     const send = xml => { res.writeHead(200, { 'Content-Type': 'text/xml' }); res.end(xml); };
     if (req.method === 'GET' && req.url === '/check') {
@@ -235,7 +296,14 @@ const server = http.createServer((req, res) => {
       }
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       const ch = alertChannels();
-      return res.end(`Server: running\nGroq key: ${groq}\nAlert channels: ${ch.length ? ch.join(', ') : 'NONE - callers\' messages would reach nobody'}\nTwilio webhook: <this address>/voice (HTTP POST)`);
+      return res.end(`Server: running\nGroq key: ${groq}\nVoice: ${ELEVEN_KEY ? 'ElevenLabs (' + ELEVEN_VOICE + '), fallback ' + VOICE : VOICE}\nAlert channels: ${ch.length ? ch.join(', ') : 'NONE - callers\' messages would reach nobody'}\nTwilio webhook: <this address>/voice (HTTP POST)`);
+    }
+    const tts = req.method === 'GET' && req.url.match(/^\/tts\/([a-f0-9]{24})\.mp3$/);
+    if (tts) {
+      const buf = audio.get(tts[1]);
+      if (!buf) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': buf.length, 'Cache-Control': 'no-store' });
+      return res.end(buf);
     }
     if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('RA Ledger phone agent is running'); }
     if (!validSignature(req, p)) { res.writeHead(403); return res.end('Forbidden'); }
@@ -244,11 +312,11 @@ const server = http.createServer((req, res) => {
     try {
       if (req.url === '/voice') {
         calls.set(sid, []);
-        return send(twiml('Hi, thanks for calling RA Ledger Solutions! This is Alex, the virtual assistant. How can I help you today?'));
+        return send(await twiml('Hi, thanks for calling RA Ledger Solutions! This is Alex, the virtual assistant. How can I help you today?'));
       }
       if (req.url === '/respond') {
         const heard = (p.SpeechResult || '').trim();
-        if (!heard) return send(twiml("Sorry, I didn't catch that. Could you say it again?"));
+        if (!heard) return send(await twiml("Sorry, I didn't catch that. Could you say it again?"));
         const history = calls.get(sid) || [];
         history.push({ role: 'user', content: heard });
         const out = await think(history);
@@ -257,12 +325,12 @@ const server = http.createServer((req, res) => {
         const m = out.message;
         if (m && m.name && m.phone && m.reason) await saveMessage(sid, p.From, m);
         if (out.end) calls.delete(sid);
-        return send(twiml(out.reply, { end: !!out.end }));
+        return send(await twiml(out.reply, { end: !!out.end }));
       }
       res.writeHead(404); res.end();
     } catch (e) {
       console.error(e);
-      send(twiml("I'm sorry, I'm having trouble right now. Please call back or email info@raledgersolutions.com. Goodbye.", { end: true }));
+      send(await twiml("I'm sorry, I'm having trouble right now. Please call back or email info@raledgersolutions.com. Goodbye.", { end: true }));
     }
   });
 });
